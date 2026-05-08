@@ -70,9 +70,46 @@ test('init supports non-interactive dry-run config generation', async () => {
   expect(output).toContain(`[core]`);
   expect(output).toContain('db_path = "memory.db"');
   expect(output).toContain('vector_backend = "sqlite-vec"');
+  expect(output).toContain('vector_dimension = 384');
   expect(output).toContain('[integrations.openclaw]');
   expect(output).toContain('[integrations.hermes]');
   expect(existsSync(join(homePath, 'config.toml'))).toBe(false);
+});
+
+test('init exposes vector dimension and warns for high-dimensional embeddings', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-init-vector-dimension-'));
+  const homePath = join(dir, '.cogmem');
+
+  const proc = Bun.spawn({
+    cmd: [
+      'bun',
+      initBin,
+      '--yes',
+      '--dry-run',
+      '--agent',
+      'none',
+      '--home',
+      homePath,
+      '--vector-dimension',
+      '4096',
+    ],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: {
+      ...process.env,
+      NO_COLOR: '1',
+    },
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(errorOutput).toBe('');
+  expect(exitCode).toBe(0);
+  expect(output).toContain('vector_dimension = 4096');
+  expect(output).toContain('High vector dimension');
+  expect(output).toContain('100,000 memories');
 });
 
 test('init dry-run can target Hermes agent workspaces', async () => {
@@ -236,6 +273,32 @@ test('doctor keeps legacy env validation available', async () => {
   expect(output).toContain('OK kernel ready');
 });
 
+test('doctor prints a high vector dimension warning for structured config', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-doctor-vector-warning-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, [
+    '[core]',
+    'db_path = "brain.db"',
+    'vector_dimension = 4096',
+  ].join('\n'));
+
+  const proc = Bun.spawn({
+    cmd: ['bun', doctorBin, '--config', configPath],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(errorOutput).toBe('');
+  expect(exitCode).toBe(0);
+  expect(output).toContain('WARN high_vector_dimension');
+  expect(output).toContain('100,000 memories');
+});
+
 test('init keeps legacy env generation behind --legacy-env', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-init-legacy-'));
   const envPath = join(dir, '.agent-brain.env');
@@ -368,4 +431,91 @@ test('vector migration dry-run can read the configured database without --db', a
   const parsed = JSON.parse(output);
   expect(parsed.dryRun).toBe(true);
   expect(parsed.eligible).toBe(0);
+});
+
+test('vector migration dry-run uses configured vector_dimension by default', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-vector-dimension-config-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, [
+    '[core]',
+    'db_path = "memory.db"',
+    'vector_dimension = 4096',
+  ].join('\n'));
+
+  const seed = Bun.spawn({
+    cmd: ['bun', doctorBin, '--config', configPath],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  await new Response(seed.stdout).text();
+  await new Response(seed.stderr).text();
+  expect(await seed.exited).toBe(0);
+
+  const proc = Bun.spawn({
+    cmd: ['bun', migrateVectorsBin, '--config', configPath, '--dry-run'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(errorOutput).toBe('');
+  expect(exitCode).toBe(0);
+  const parsed = JSON.parse(output);
+  expect(parsed.dimension).toBe(4096);
+  expect(parsed.dryRun).toBe(true);
+});
+
+test('vector migration rejects invalid explicit dimensions', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-vector-invalid-dimension-'));
+  const dbPath = join(dir, 'memory.db');
+
+  const proc = Bun.spawn({
+    cmd: ['bun', migrateVectorsBin, '--db', dbPath, '--dimension', '4096px', '--dry-run'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(output).toBe('');
+  expect(exitCode).toBe(1);
+  expect(errorOutput).toContain('--dimension must be a positive integer');
+});
+
+test('snapshot import rejects invalid explicit dimensions before importing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-snapshot-invalid-dimension-'));
+  const dbPath = join(dir, 'memory.db');
+  const snapshotPath = join(dir, 'memory.snap');
+
+  const proc = Bun.spawn({
+    cmd: [
+      'bun',
+      snapshotBin,
+      'import',
+      '--snap',
+      snapshotPath,
+      '--db',
+      dbPath,
+      '--dimension',
+      '4096px',
+      '--dry-run',
+    ],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(output).toBe('');
+  expect(exitCode).toBe(1);
+  expect(errorOutput).toContain('--dimension must be a positive integer');
 });

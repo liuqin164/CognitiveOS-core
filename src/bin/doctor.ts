@@ -15,6 +15,16 @@ function ok(message: string): void {
   console.log(`OK ${message}`);
 }
 
+function warn(code: string, message: string): void {
+  console.log(`WARN ${code}: ${message}`);
+}
+
+function printWarnings(diagnostics: Array<{ severity: string; code: string; message: string }>): void {
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity === 'warning') warn(diagnostic.code, diagnostic.message);
+  }
+}
+
 function fail(message: string): never {
   console.error(`FAIL ${message}`);
   process.exit(1);
@@ -30,6 +40,7 @@ if (envPath) {
   const parsed = parseCoreEnvConfig(process.env);
   const error = parsed.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
   if (error) fail(`${error.code}: ${error.message}`);
+  printWarnings(parsed.diagnostics);
   ok('configuration parsed');
 
   const kernel = createMemoryKernelFromEnv({ envPath, autoLoadEnv: false });
@@ -45,6 +56,7 @@ if (envPath) {
     const parsed = parseCoreEnvConfig(process.env);
     const error = parsed.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
     if (error) fail(`${error.code}: ${error.message}`);
+    printWarnings(parsed.diagnostics);
     ok('configuration parsed');
     const kernel = createMemoryKernelFromEnv({ envPath: resolution.path, autoLoadEnv: false });
     const health = kernel.getHealthStatus();
@@ -55,6 +67,7 @@ if (envPath) {
     const loaded = loadCogmemConfig({ configPath: resolution.path });
     const error = loaded.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
     if (error) fail(`${error.code}: ${error.message}`);
+    printWarnings(loaded.diagnostics);
     ok('configuration parsed');
     ok(`cogmem home ${loaded.homeDir}`);
     const kernel = createMemoryKernelFromConfig({ configPath: resolution.path });

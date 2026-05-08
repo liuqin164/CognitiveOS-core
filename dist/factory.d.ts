@@ -28,6 +28,7 @@ export interface MemoryKernelOptions {
     embeddingProvider?: EmbeddingProvider;
     maxOfflinePipelineBudgetMs?: number;
     vectorBackend?: VectorBackend;
+    vectorDimension?: number;
     encryptionProvider?: EncryptionProvider;
     redactionPolicy?: RedactionPolicy | false;
 }

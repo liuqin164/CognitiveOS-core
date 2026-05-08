@@ -7,13 +7,16 @@ import { HashUtils } from '../utils/hash.js';
 import { aaakGenerator } from '../utils/AAAKGenerator.js';
 import { IMPORTANCE_STABILITY_MAP } from '../core/ImportanceLevels.js';
 import { ImportanceSignalDetector } from './ImportanceSignalDetector.js';
+import { config } from '../utils/Config.js';
 export class IngestionEngine {
+    vectorDimension;
     embedder;
     projectId;
     vectorSearchFn;
     getNeuronFn;
     activateNeuronFn;
-    constructor(embedder, projectId) {
+    constructor(embedder, projectId, vectorDimension = config.vector.dimension) {
+        this.vectorDimension = vectorDimension;
         this.embedder = embedder;
         this.projectId = projectId;
     }
@@ -103,7 +106,7 @@ export class IngestionEngine {
         const S = this.calculateSpatialCoordinates(input.filePath);
         const hash = HashUtils.sha256(input.content);
         const V = [];
-        for (let i = 0; i < 384; i++) {
+        for (let i = 0; i < this.vectorDimension; i++) {
             V.push((hash.charCodeAt(i % hash.length) - 48) / 48 * 2 - 1);
         }
         const prevHash = HashUtils.computePrevHash(options.prevNeuronSelfHash || null);

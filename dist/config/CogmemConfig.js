@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { AesGcmEncryptionProvider } from '../encryption/index.js';
+import { DEFAULT_VECTOR_DIMENSION, addVectorDimensionDiagnostics, parseVectorDimensionValue, } from './VectorDimension.js';
 export function defaultCogmemHome(env = process.env) {
     if (env.COGMEM_HOME?.trim())
         return expandHome(env.COGMEM_HOME.trim(), env);
@@ -77,6 +78,23 @@ export function loadCogmemConfig(options = {}) {
             code: 'invalid_vector_backend',
             message: 'core.vector_backend must be sqlite-vec or hnswlib.',
         });
+    }
+    const coreVectorDimension = core.vector_dimension;
+    const embeddingVectorDimension = embedding.vector_dimension;
+    if (coreVectorDimension !== undefined
+        && embeddingVectorDimension !== undefined
+        && coreVectorDimension !== embeddingVectorDimension) {
+        diagnostics.push({
+            severity: 'warning',
+            code: 'conflicting_vector_dimension',
+            message: 'Both core.vector_dimension and embedding.vector_dimension are set; core.vector_dimension wins.',
+        });
+    }
+    const vectorDimension = parseVectorDimensionValue(coreVectorDimension ?? embeddingVectorDimension ?? DEFAULT_VECTOR_DIMENSION, coreVectorDimension !== undefined ? 'core.vector_dimension' : 'embedding.vector_dimension', diagnostics);
+    if (vectorDimension !== undefined) {
+        optionsOut.vectorDimension = vectorDimension;
+        envOut.AB_VECTOR_DIMENSION = String(vectorDimension);
+        addVectorDimensionDiagnostics(vectorDimension, diagnostics);
     }
     const redactionPolicy = {};
     const piiEmail = booleanValue(governance.pii_redact_email);

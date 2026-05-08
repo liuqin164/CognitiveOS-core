@@ -1,9 +1,10 @@
 // ============================================
 // 配置管理 - 统一管理所有配置
 // ============================================
+import { DEFAULT_VECTOR_DIMENSION } from '../config/VectorDimension.js';
 const DEFAULT_CONFIG = {
     vector: {
-        dimension: 384,
+        dimension: DEFAULT_VECTOR_DIMENSION,
         maxElements: 1000000,
         efConstruction: 200,
         efSearch: 50,
@@ -88,37 +89,42 @@ class Config {
     static fromEnv() {
         return {
             vector: {
-                dimension: parseInt(process.env.AB_VECTOR_DIMENSION || String(DEFAULT_CONFIG.vector.dimension)),
-                maxElements: parseInt(process.env.AB_VECTOR_MAX_ELEMENTS || String(DEFAULT_CONFIG.vector.maxElements)),
-                efConstruction: parseInt(process.env.AB_VECTOR_EF_CONSTRUCTION || String(DEFAULT_CONFIG.vector.efConstruction)),
-                efSearch: parseInt(process.env.AB_VECTOR_EF_SEARCH || String(DEFAULT_CONFIG.vector.efSearch)),
-                topK: parseInt(process.env.AB_VECTOR_TOP_K || String(DEFAULT_CONFIG.vector.topK)),
+                dimension: parsePositiveInteger(process.env.AB_VECTOR_DIMENSION, DEFAULT_CONFIG.vector.dimension),
+                maxElements: parsePositiveInteger(process.env.AB_VECTOR_MAX_ELEMENTS, DEFAULT_CONFIG.vector.maxElements),
+                efConstruction: parsePositiveInteger(process.env.AB_VECTOR_EF_CONSTRUCTION, DEFAULT_CONFIG.vector.efConstruction),
+                efSearch: parsePositiveInteger(process.env.AB_VECTOR_EF_SEARCH, DEFAULT_CONFIG.vector.efSearch),
+                topK: parsePositiveInteger(process.env.AB_VECTOR_TOP_K, DEFAULT_CONFIG.vector.topK),
                 indexPath: process.env.AB_VECTOR_INDEX_PATH || DEFAULT_CONFIG.vector.indexPath
             },
             embedding: DEFAULT_CONFIG.embedding,
             energy: {
-                initialEnergy: parseInt(process.env.AB_ENERGY_INITIAL || String(DEFAULT_CONFIG.energy.initialEnergy)),
+                initialEnergy: parsePositiveInteger(process.env.AB_ENERGY_INITIAL, DEFAULT_CONFIG.energy.initialEnergy),
                 decayFactor: parseFloat(process.env.AB_ENERGY_DECAY || String(DEFAULT_CONFIG.energy.decayFactor)),
-                maxHops: parseInt(process.env.AB_ENERGY_HOPS || String(DEFAULT_CONFIG.energy.maxHops))
+                maxHops: parsePositiveInteger(process.env.AB_ENERGY_HOPS, DEFAULT_CONFIG.energy.maxHops)
             },
             degradation: {
-                memoryThresholdMB: parseInt(process.env.AB_DEGRADE_MEM_THRESHOLD || String(DEFAULT_CONFIG.degradation.memoryThresholdMB)),
-                slowInferenceThresholdMs: parseInt(process.env.AB_DEGRADE_SLOW_MS || String(DEFAULT_CONFIG.degradation.slowInferenceThresholdMs))
+                memoryThresholdMB: parsePositiveInteger(process.env.AB_DEGRADE_MEM_THRESHOLD, DEFAULT_CONFIG.degradation.memoryThresholdMB),
+                slowInferenceThresholdMs: parsePositiveInteger(process.env.AB_DEGRADE_SLOW_MS, DEFAULT_CONFIG.degradation.slowInferenceThresholdMs)
             },
             index: {
-                anchorInterval: parseInt(process.env.AB_INDEX_ANCHOR_INTERVAL || String(DEFAULT_CONFIG.index.anchorInterval)),
-                fullTextSearchLimit: parseInt(process.env.AB_INDEX_FTS_LIMIT || String(DEFAULT_CONFIG.index.fullTextSearchLimit))
+                anchorInterval: parsePositiveInteger(process.env.AB_INDEX_ANCHOR_INTERVAL, DEFAULT_CONFIG.index.anchorInterval),
+                fullTextSearchLimit: parsePositiveInteger(process.env.AB_INDEX_FTS_LIMIT, DEFAULT_CONFIG.index.fullTextSearchLimit)
             },
             logging: {
                 level: process.env.AB_LOG_LEVEL || DEFAULT_CONFIG.logging.level,
                 enabled: process.env.AB_LOG_ENABLED !== 'false'
             },
             recall: {
-                vectorFallbackThreshold: parseInt(process.env.AB_RECALL_VECTOR_THRESHOLD || String(DEFAULT_CONFIG.recall.vectorFallbackThreshold)),
+                vectorFallbackThreshold: parsePositiveInteger(process.env.AB_RECALL_VECTOR_THRESHOLD, DEFAULT_CONFIG.recall.vectorFallbackThreshold),
                 vectorEnabled: process.env.AB_RECALL_VECTOR_ENABLED !== 'false'
             }
         };
     }
 }
-export const config = new Config();
+function parsePositiveInteger(value, fallback) {
+    const trimmed = value?.trim() || '';
+    const parsed = /^[0-9]+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+export const config = new Config(Config.fromEnv());
 export { Config as ConfigClass };

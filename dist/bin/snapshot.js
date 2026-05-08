@@ -2,6 +2,7 @@
 import { join } from 'node:path';
 import { SnapshotImporter, createMemoryKernel, createMemoryKernelFromConfig } from '../public.js';
 import { loadCogmemConfig, resolveCogmemConfigPath } from '../config/CogmemConfig.js';
+import { parseVectorDimensionValue } from '../config/VectorDimension.js';
 import { config } from '../utils/Config.js';
 function parseArgs(argv) {
     const args = {};
@@ -31,6 +32,20 @@ function requireString(args, key) {
 function stringArg(args, key) {
     const value = args[key];
     return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+function optionalPositiveIntegerArg(args, key) {
+    const value = args[key];
+    if (value === undefined)
+        return undefined;
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new Error(`--${key} must be a positive integer.`);
+    }
+    const diagnostics = [];
+    const parsed = parseVectorDimensionValue(value, `--${key}`, diagnostics);
+    const error = diagnostics.find((diagnostic) => diagnostic.severity === 'error');
+    if (error || parsed === undefined)
+        throw new Error(error?.message ?? `--${key} must be a positive integer.`);
+    return parsed;
 }
 function loadConfig(args) {
     const explicit = stringArg(args, 'config');
@@ -67,7 +82,7 @@ async function main() {
         const importer = new SnapshotImporter({
             // Use the dimension declared in config rather than instantiating a VectorStore
             // (which would try to load hnswlib-node and emit a noisy warning when unavailable).
-            expectedEmbeddingDimension: Number(args.dimension ?? config.vector.dimension),
+            expectedEmbeddingDimension: optionalPositiveIntegerArg(args, 'dimension') ?? loaded?.options.vectorDimension ?? config.vector.dimension,
         });
         const result = await importer.import(snapshotPath, dbPath, {
             dryRun: args['dry-run'] === true,

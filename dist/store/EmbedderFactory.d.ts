@@ -7,5 +7,5 @@ export interface EmbeddingBackendInfo {
 }
 export declare function resolveEmbeddingBackendId(): EmbeddingBackendId;
 export declare function getEmbeddingBackendInfo(backendId?: EmbeddingBackendId): EmbeddingBackendInfo;
-export declare function createConfiguredEmbedder(): Embedder;
+export declare function createConfiguredEmbedder(vectorDimension?: number): Embedder;
 //# sourceMappingURL=EmbedderFactory.d.ts.map

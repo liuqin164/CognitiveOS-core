@@ -7,6 +7,11 @@ import type { MemoryKernelOptions } from '../factory.js';
 import type { RedactionPolicy } from '../governance/index.js';
 import type { VectorBackend } from '../store/IVectorStore.js';
 import type { CoreEnvDiagnostic } from './CoreEnvConfig.js';
+import {
+  DEFAULT_VECTOR_DIMENSION,
+  addVectorDimensionDiagnostics,
+  parseVectorDimensionValue,
+} from './VectorDimension.js';
 
 export type CogmemConfigKind = 'toml' | 'env' | 'missing';
 export type EnvLike = Record<string, string | undefined>;
@@ -133,6 +138,30 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
       code: 'invalid_vector_backend',
       message: 'core.vector_backend must be sqlite-vec or hnswlib.',
     });
+  }
+
+  const coreVectorDimension = core.vector_dimension;
+  const embeddingVectorDimension = embedding.vector_dimension;
+  if (
+    coreVectorDimension !== undefined
+    && embeddingVectorDimension !== undefined
+    && coreVectorDimension !== embeddingVectorDimension
+  ) {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'conflicting_vector_dimension',
+      message: 'Both core.vector_dimension and embedding.vector_dimension are set; core.vector_dimension wins.',
+    });
+  }
+  const vectorDimension = parseVectorDimensionValue(
+    coreVectorDimension ?? embeddingVectorDimension ?? DEFAULT_VECTOR_DIMENSION,
+    coreVectorDimension !== undefined ? 'core.vector_dimension' : 'embedding.vector_dimension',
+    diagnostics,
+  );
+  if (vectorDimension !== undefined) {
+    optionsOut.vectorDimension = vectorDimension;
+    envOut.AB_VECTOR_DIMENSION = String(vectorDimension);
+    addVectorDimensionDiagnostics(vectorDimension, diagnostics);
   }
 
   const redactionPolicy: RedactionPolicy = {};

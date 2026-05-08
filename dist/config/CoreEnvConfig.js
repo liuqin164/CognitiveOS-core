@@ -1,3 +1,4 @@
+import { addVectorDimensionDiagnostics, parseVectorDimensionValue, } from './VectorDimension.js';
 function parseBoolean(value) {
     if (value === undefined)
         return undefined;
@@ -24,6 +25,11 @@ export function parseCoreEnvConfig(env) {
                 message: 'COGMEM_VECTOR_BACKEND must be sqlite-vec or hnswlib.',
             });
         }
+    }
+    const vectorDimension = parseVectorDimensionValue(env.AB_VECTOR_DIMENSION, 'AB_VECTOR_DIMENSION', diagnostics);
+    if (vectorDimension !== undefined) {
+        options.vectorDimension = vectorDimension;
+        addVectorDimensionDiagnostics(vectorDimension, diagnostics);
     }
     const redactionPolicy = {};
     const email = parseBoolean(env.COGMEM_PII_REDACT_EMAIL);

@@ -44,6 +44,7 @@ The main configuration lives at `~/.cogmem/config.toml`:
 [core]
 db_path = "memory.db"
 vector_backend = "sqlite-vec"
+vector_dimension = 384
 
 [governance]
 pii_redact_email = true
@@ -51,6 +52,8 @@ pii_redact_phone = true
 pii_redact_ssn = true
 encryption = false
 ```
+
+Set `core.vector_dimension` to match the embedding model output. For example, `qwen3-embedding:8b` uses 4096 dimensions. High dimensions are supported, but `cogmem-doctor` warns at 2048+ dimensions because 4096-dimensional Float32 vectors use about 1.53 GiB for 100,000 memories before SQLite/index overhead.
 
 Legacy `.agent-brain.env` files remain supported through `createMemoryKernelFromEnv()` and `--env-path`, but new installs should use `config.toml`.
 
@@ -176,7 +179,7 @@ cogmem-import-openclaw   # migrate OpenClaw workspace memory into core
 cogmem-import-hermes     # migrate Hermes profile/session memory into core
 cogmem-snapshot          # export/import snapshot helper
 cogmem-re-embed          # re-embedding helper
-cogmem-migrate-vectors   # vector backend migration helper
+cogmem-migrate-vectors   # vector backend migration helper; uses config vector_dimension unless --dimension is passed
 ```
 
 ## Public API Policy

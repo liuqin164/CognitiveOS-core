@@ -20,6 +20,11 @@ import { createInterface } from 'node:readline';
 import { dirname, resolve, join } from 'node:path';
 
 import { defaultCogmemHome } from '../config/CogmemConfig.js';
+import {
+  DEFAULT_VECTOR_DIMENSION,
+  HIGH_VECTOR_DIMENSION_THRESHOLD,
+  vectorDimensionWarningMessage,
+} from '../config/VectorDimension.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +48,7 @@ interface WizardConfig {
   // Core
   dbPath: string;
   vectorBackend: 'sqlite-vec' | 'hnswlib';
+  vectorDimension: number;
   // Embedding
   embeddingProvider: 'deterministic_local' | 'openai_compatible';
   embeddingBaseUrl: string;
@@ -77,6 +83,7 @@ interface InitArgs {
   yes: boolean;
   legacyEnv: boolean;
   agent: 'auto' | 'openclaw' | 'hermes' | 'none';
+  vectorDimension?: number;
 }
 
 function readArgs(argv: string[]): InitArgs {
@@ -87,6 +94,7 @@ function readArgs(argv: string[]): InitArgs {
   };
   const agent = readValue('--agent', 'auto');
   const scope = readValue('--scope', 'global');
+  const vectorDimension = parseOptionalPositiveInteger(readValue('--vector-dimension', ''), '--vector-dimension');
   return {
     envPath: readValue('--env-path', '.agent-brain.env'),
     configPath: readValue('--config', ''),
@@ -96,6 +104,7 @@ function readArgs(argv: string[]): InitArgs {
     yes: argv.includes('--yes') || argv.includes('-y'),
     legacyEnv: argv.includes('--legacy-env') || argv.includes('--env-path'),
     agent: agent === 'openclaw' || agent === 'hermes' || agent === 'none' ? agent : 'auto',
+    vectorDimension,
   };
 }
 
@@ -177,6 +186,7 @@ function suggestEmbeddingModel(det: DetectionResult): {
   provider: 'deterministic_local' | 'openai_compatible';
   model: string;
   baseUrl: string;
+  vectorDimension: number;
 } {
   if (det.ollamaAvailable) {
     const model = pickFirst(
@@ -187,10 +197,36 @@ function suggestEmbeddingModel(det: DetectionResult): {
       (n) => n.startsWith('mxbai'),
     );
     if (model) {
-      return { provider: 'openai_compatible', model, baseUrl: 'http://localhost:11434/v1' };
+      return {
+        provider: 'openai_compatible',
+        model,
+        baseUrl: 'http://localhost:11434/v1',
+        vectorDimension: inferEmbeddingVectorDimension('openai_compatible', model),
+      };
     }
   }
-  return { provider: 'deterministic_local', model: 'deterministic_local', baseUrl: '' };
+  return {
+    provider: 'deterministic_local',
+    model: 'deterministic_local',
+    baseUrl: '',
+    vectorDimension: DEFAULT_VECTOR_DIMENSION,
+  };
+}
+
+function inferEmbeddingVectorDimension(
+  provider: 'deterministic_local' | 'openai_compatible',
+  model: string,
+): number {
+  if (provider === 'deterministic_local') return DEFAULT_VECTOR_DIMENSION;
+  const normalized = model.toLowerCase();
+  if (normalized.includes('qwen3-embedding:8b')) return 4096;
+  if (normalized.includes('qwen3-embedding:4b')) return 2560;
+  if (normalized.includes('qwen3-embedding:0.6b')) return 1024;
+  if (normalized.includes('bge-m3')) return 1024;
+  if (normalized.includes('mxbai')) return 1024;
+  if (normalized.includes('nomic-embed-text')) return 768;
+  if (normalized.includes('all-minilm-l6-v2')) return DEFAULT_VECTOR_DIMENSION;
+  return DEFAULT_VECTOR_DIMENSION;
 }
 
 function suggestMemoryModel(det: DetectionResult): {
@@ -308,6 +344,7 @@ async function stepEmbedding(det: DetectionResult): Promise<{
   provider: 'deterministic_local' | 'openai_compatible';
   model: string;
   baseUrl: string;
+  vectorDimension: number;
 }> {
   console.log('');
   console.log('  ── Step 3 of 6: Embedding ────────────────────────────────────');
@@ -322,7 +359,12 @@ async function stepEmbedding(det: DetectionResult): Promise<{
   console.log('');
 
   const edit = await confirm('  Edit embedding settings?', false);
-  if (!edit) return suggestion;
+  if (!edit) {
+    return {
+      ...suggestion,
+      vectorDimension: await stepVectorDimension(suggestion.vectorDimension),
+    };
+  }
 
   const providerRaw = await ask(`  Provider [${suggestion.provider}]: `);
   const provider = (providerRaw || suggestion.provider) as 'deterministic_local' | 'openai_compatible';
@@ -330,14 +372,33 @@ async function stepEmbedding(det: DetectionResult): Promise<{
   if (provider === 'openai_compatible') {
     const baseUrl = await ask(`  Base URL [${suggestion.baseUrl || 'http://localhost:11434/v1'}]: `);
     const model   = await ask(`  Model name [${suggestion.model}]: `);
+    const resolvedModel = model || suggestion.model;
     return {
       provider: 'openai_compatible',
       baseUrl: baseUrl || suggestion.baseUrl || 'http://localhost:11434/v1',
-      model:   model   || suggestion.model,
+      model:   resolvedModel,
+      vectorDimension: await stepVectorDimension(
+        inferEmbeddingVectorDimension('openai_compatible', resolvedModel),
+      ),
     };
   }
 
-  return { provider: 'deterministic_local', model: 'deterministic_local', baseUrl: '' };
+  return {
+    provider: 'deterministic_local',
+    model: 'deterministic_local',
+    baseUrl: '',
+    vectorDimension: await stepVectorDimension(DEFAULT_VECTOR_DIMENSION),
+  };
+}
+
+async function stepVectorDimension(suggested: number): Promise<number> {
+  console.log('');
+  console.log('  Vector dimension controls the storage/index width for neuron vectors.');
+  console.log('  It must match the embedding model output dimension.');
+  const raw = await ask(`  Vector dimension [${suggested}]: `);
+  const dimension = parseOptionalPositiveInteger(raw, 'vector dimension') ?? suggested;
+  printVectorDimensionWarning(dimension);
+  return dimension;
 }
 
 async function stepModelRoles(det: DetectionResult): Promise<{
@@ -516,6 +577,7 @@ function buildEnvLines(cfg: WizardConfig): string[] {
   lines.push('# ── Core ─────────────────────────────────────────────────────');
   kv('COGMEM_DB', cfg.dbPath);
   kv('COGMEM_VECTOR_BACKEND', cfg.vectorBackend);
+  kv('AB_VECTOR_DIMENSION', String(cfg.vectorDimension));
   lines.push('');
 
   lines.push('# ── Embedding ────────────────────────────────────────────────');
@@ -584,6 +646,7 @@ function buildTomlLines(cfg: WizardConfig): string[] {
   lines.push('[core]');
   lines.push(`db_path = ${tomlString(cfg.dbPath)}`);
   lines.push(`vector_backend = ${tomlString(cfg.vectorBackend)}`);
+  lines.push(`vector_dimension = ${cfg.vectorDimension}`);
   lines.push('');
   lines.push('[paths]');
   lines.push('embeddings_dir = "embeddings"');
@@ -632,6 +695,21 @@ function buildTomlLines(cfg: WizardConfig): string[] {
 
 function tomlString(value: string): string {
   return JSON.stringify(value);
+}
+
+function parseOptionalPositiveInteger(value: string, label: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = /^[0-9]+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function printVectorDimensionWarning(dimension: number): void {
+  if (dimension < HIGH_VECTOR_DIMENSION_THRESHOLD) return;
+  console.log(`  Warning: ${vectorDimensionWarningMessage(dimension)}`);
 }
 
 function resolveInstallTarget(args: InitArgs): { homeDir: string; configPath: string; envPath: string } {
@@ -774,6 +852,7 @@ async function main(): Promise<void> {
     const cfg: WizardConfig = {
       dbPath: args.legacyEnv ? './cogmem.db' : 'memory.db',
       vectorBackend: 'sqlite-vec',
+      vectorDimension: args.vectorDimension ?? embedding.vectorDimension,
       embeddingProvider: embedding.provider,
       embeddingBaseUrl: embedding.baseUrl,
       embeddingModel: embedding.model,
@@ -798,6 +877,7 @@ async function main(): Promise<void> {
       console.log('');
       console.log(`  Dry run config for ${outputPath}:`);
       console.log(lines.join('\n'));
+      printVectorDimensionWarning(cfg.vectorDimension);
       console.log('');
       return;
     }
@@ -813,6 +893,7 @@ async function main(): Promise<void> {
       console.log(`  Database    ${join(target.homeDir, cfg.dbPath)}`);
       console.log(`  Snapshots   ${join(target.homeDir, 'snapshots')}`);
     }
+    printVectorDimensionWarning(cfg.vectorDimension);
     printUsageSnippet(cfg, args.legacyEnv);
     return;
   }
@@ -834,6 +915,7 @@ async function main(): Promise<void> {
   const cfg: WizardConfig = {
     dbPath,
     vectorBackend,
+    vectorDimension: args.vectorDimension ?? embedding.vectorDimension,
     embeddingProvider: embedding.provider,
     embeddingBaseUrl:  embedding.baseUrl,
     embeddingModel:    embedding.model,
@@ -870,6 +952,7 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`  DB             ${cfg.dbPath}`);
   console.log(`  Vector backend ${cfg.vectorBackend}`);
+  console.log(`  Vector dim     ${cfg.vectorDimension}`);
   console.log(`  Embedding      ${cfg.embeddingProvider} / ${cfg.embeddingModel}`);
   console.log(`  Memory model   ${cfg.memoryProvider} / ${cfg.memoryModel}`);
   console.log(`  Reasoning      ${cfg.reasoningProvider} / ${cfg.reasoningModel}`);
@@ -877,6 +960,7 @@ async function main(): Promise<void> {
   console.log(`  Encryption     ${cfg.encryptionPassphrase ? 'AES-256-GCM enabled' : 'disabled'}`);
   console.log(`  OpenClaw       ${cfg.openClawEnabled ? 'enabled' : 'disabled'}`);
   console.log(`  Hermes         ${cfg.hermesEnabled ? 'enabled' : 'disabled'}`);
+  printVectorDimensionWarning(cfg.vectorDimension);
 
   printUsageSnippet(cfg, args.legacyEnv);
 

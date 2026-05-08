@@ -4,12 +4,13 @@ interface IngestRuntimeOptions {
     prevNeuronSelfHash?: string | null;
 }
 export declare class IngestionEngine {
+    private readonly vectorDimension;
     private embedder;
     private projectId?;
     private vectorSearchFn?;
     private getNeuronFn?;
     private activateNeuronFn?;
-    constructor(embedder: Embedder, projectId?: string);
+    constructor(embedder: Embedder, projectId?: string, vectorDimension?: number);
     /** 设置去重所需的依赖 */
     setDedupDeps(vectorSearchFn: (vector: number[], k: number) => Array<{
         id: string;

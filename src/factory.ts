@@ -91,6 +91,7 @@ export interface MemoryKernelOptions {
   embeddingProvider?: EmbeddingProvider;
   maxOfflinePipelineBudgetMs?: number;
   vectorBackend?: VectorBackend;
+  vectorDimension?: number;
   encryptionProvider?: EncryptionProvider;
   redactionPolicy?: RedactionPolicy | false;
 }
@@ -208,11 +209,12 @@ export class MemoryKernel {
     db.exec('PRAGMA busy_timeout = 5000;');
     this.ensureMetaTable(db);
     this.ensureGovernanceAuditTable(db);
+    const vectorDimension = options.vectorDimension ?? config.vector.dimension;
     this.beliefStore = new BeliefStore(this.dbPath, this.eventStore);
     this.cursorStore = new IngestionCursorStore(this.dbPath);
     this.vectorStore = options.vectorBackend === 'hnswlib'
-      ? new VectorStore()
-      : new SqliteVecStore(db, config.vector.dimension);
+      ? new VectorStore(vectorDimension)
+      : new SqliteVecStore(db, vectorDimension);
     this.topicRegistry = new TopicRegistry(this.memoryGraph);
     this.topologyStore = new TopologyStore(this.dbPath);
     this.cognitiveGraphStore = new CognitiveGraphStore(this.dbPath);
@@ -227,7 +229,7 @@ export class MemoryKernel {
     this.topicSummaryBoard = new TopicSummaryBoard(this.memoryGraph, this.summaryStore);
     this.topicDecayPolicy = new TopicDecayPolicy(this.memoryGraph);
     this.localSemanticCompiler = new LocalSemanticCompiler();
-    this.embedder = options.embedder ?? createConfiguredEmbedder();
+    this.embedder = options.embedder ?? createConfiguredEmbedder(vectorDimension);
     this.embeddingProvider = options.embeddingProvider;
     this.universeNavigator = new UniverseNavigator(
       new QueryCompiler(this.localSemanticCompiler, new EntityResolutionEngine(this.entityStore)),
@@ -249,7 +251,7 @@ export class MemoryKernel {
     this.ranker = new TwoStagePulseRanker(this.vectorStore);
     this.reflection = new Reflection(this.memoryGraph);
     this.metabolism = new Metabolism(this.memoryGraph, this.vectorStore, this.eventStore);
-    this.ingestionEngine = new IngestionEngine(this.embedder);
+    this.ingestionEngine = new IngestionEngine(this.embedder, undefined, vectorDimension);
     this.ingestionEngine.setDedupDeps(
       (vector, k) => this.vectorStore.search(vector, k),
       (id) => this.memoryGraph.getNeuron(id),

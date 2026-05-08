@@ -60,6 +60,63 @@ test('loadCogmemConfig parses TOML and resolves paths relative to the config fil
   expect(loaded.diagnostics).toEqual([]);
 });
 
+test('loadCogmemConfig maps vector_dimension to kernel options and env', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cogmem-vector-dimension-'));
+  const configPath = join(root, '.cogmem', 'config.toml');
+  mkdirSync(join(root, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, [
+    '[core]',
+    'db_path = "memory.db"',
+    'vector_backend = "sqlite-vec"',
+    'vector_dimension = 4096',
+  ].join('\n'));
+
+  const loaded = loadCogmemConfig({ configPath, env: {} });
+
+  expect(loaded.options.vectorDimension).toBe(4096);
+  expect(loaded.env.AB_VECTOR_DIMENSION).toBe('4096');
+  expect(loaded.diagnostics).toContainEqual(expect.objectContaining({
+    severity: 'warning',
+    code: 'high_vector_dimension',
+  }));
+});
+
+test('loadCogmemConfig rejects invalid vector dimensions without imposing a hard upper bound', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cogmem-invalid-vector-dimension-'));
+  const configPath = join(root, 'config.toml');
+  writeFileSync(configPath, [
+    '[core]',
+    'db_path = "memory.db"',
+    'vector_dimension = 0',
+  ].join('\n'));
+
+  const loaded = loadCogmemConfig({ configPath, env: {} });
+
+  expect(loaded.options.vectorDimension).toBeUndefined();
+  expect(loaded.diagnostics).toContainEqual(expect.objectContaining({
+    severity: 'error',
+    code: 'invalid_vector_dimension',
+  }));
+});
+
+test('loadCogmemConfig rejects partially numeric vector dimensions', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cogmem-partial-vector-dimension-'));
+  const configPath = join(root, 'config.toml');
+  writeFileSync(configPath, [
+    '[core]',
+    'db_path = "memory.db"',
+    'vector_dimension = "4096px"',
+  ].join('\n'));
+
+  const loaded = loadCogmemConfig({ configPath, env: {} });
+
+  expect(loaded.options.vectorDimension).toBeUndefined();
+  expect(loaded.diagnostics).toContainEqual(expect.objectContaining({
+    severity: 'error',
+    code: 'invalid_vector_dimension',
+  }));
+});
+
 test('resolveCogmemConfigPath prefers project .cogmem over global home and falls back to legacy env', () => {
   const root = mkdtempSync(join(tmpdir(), 'cogmem-discovery-'));
   const nested = join(root, 'packages', 'demo');
@@ -175,6 +232,23 @@ test('createMemoryKernelFromConfig opens the TOML configured database', () => {
   const kernel = createMemoryKernelFromConfig({ configPath });
 
   expect(kernel.getHealthStatus().dbPath).toBe(dbPath);
+  kernel.close();
+});
+
+test('createMemoryKernelFromConfig applies vector_dimension to the active vector store', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cogmem-kernel-vector-dimension-'));
+  const configPath = join(root, '.cogmem', 'config.toml');
+  mkdirSync(join(root, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, [
+    '[core]',
+    'db_path = "memory.db"',
+    'vector_backend = "sqlite-vec"',
+    'vector_dimension = 4096',
+  ].join('\n'));
+
+  const kernel = createMemoryKernelFromConfig({ configPath });
+
+  expect(kernel.vectorStore.getStats().dimension).toBe(4096);
   kernel.close();
 });
 

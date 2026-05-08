@@ -57,7 +57,7 @@ class ModelRegistryEmbedder extends Embedder {
   }
 }
 
-export function createConfiguredEmbedder(): Embedder {
+export function createConfiguredEmbedder(vectorDimension?: number): Embedder {
   const backendId = resolveEmbeddingBackendId();
   if (backendId === 'openai_compatible') {
     const registry = ModelRegistry.fromEnv();
@@ -65,5 +65,5 @@ export function createConfiguredEmbedder(): Embedder {
   }
   return backendId === 'transformers_remote'
     ? new Embedder()
-    : new DeterministicEmbedder();
+    : new DeterministicEmbedder(vectorDimension);
 }

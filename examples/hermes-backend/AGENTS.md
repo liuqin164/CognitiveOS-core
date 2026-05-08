@@ -22,6 +22,8 @@ The default install creates:
 
 Use `bunx cogmem-init --agent hermes --scope project` only when this workspace needs its own `.cogmem/` directory.
 
+If you configure a high-dimensional embedding model, set `core.vector_dimension` in `~/.cogmem/config.toml` to the model output dimension. Example: `qwen3-embedding:8b` needs `vector_dimension = 4096`. Run `bunx cogmem-doctor` after editing; it warns about 2048+ dimensions because 4096-dimensional vectors cost about 1.53 GiB per 100,000 memories before SQLite/index overhead.
+
 ## Migrate Existing Hermes Memory
 
 Default Hermes memory contract:

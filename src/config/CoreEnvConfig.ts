@@ -1,6 +1,10 @@
 import type { MemoryKernelOptions } from '../factory.js';
 import type { RedactionPolicy } from '../governance/index.js';
 import type { VectorBackend } from '../store/IVectorStore.js';
+import {
+  addVectorDimensionDiagnostics,
+  parseVectorDimensionValue,
+} from './VectorDimension.js';
 
 export interface CoreEnvDiagnostic {
   severity: 'warning' | 'error';
@@ -39,6 +43,16 @@ export function parseCoreEnvConfig(env: EnvLike): ParsedCoreEnvConfig {
         message: 'COGMEM_VECTOR_BACKEND must be sqlite-vec or hnswlib.',
       });
     }
+  }
+
+  const vectorDimension = parseVectorDimensionValue(
+    env.AB_VECTOR_DIMENSION,
+    'AB_VECTOR_DIMENSION',
+    diagnostics,
+  );
+  if (vectorDimension !== undefined) {
+    options.vectorDimension = vectorDimension;
+    addVectorDimensionDiagnostics(vectorDimension, diagnostics);
   }
 
   const redactionPolicy: RedactionPolicy = {};

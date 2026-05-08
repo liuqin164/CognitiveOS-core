@@ -10,6 +10,7 @@ import { Embedder } from '../store/Embedder.js';
 import { aaakGenerator } from '../utils/AAAKGenerator.js';
 import { IMPORTANCE_STABILITY_MAP } from '../core/ImportanceLevels.js';
 import { ImportanceSignalDetector } from './ImportanceSignalDetector.js';
+import { config } from '../utils/Config.js';
 
 /** 去重检查结果 */
 interface DedupResult {
@@ -29,7 +30,11 @@ export class IngestionEngine {
   private getNeuronFn?: (id: string) => Neuron | null;
   private activateNeuronFn?: (id: string) => void;
 
-  constructor(embedder: Embedder, projectId?: string) {
+  constructor(
+    embedder: Embedder,
+    projectId?: string,
+    private readonly vectorDimension: number = config.vector.dimension
+  ) {
     this.embedder = embedder;
     this.projectId = projectId;
   }
@@ -141,7 +146,7 @@ export class IngestionEngine {
     const S = this.calculateSpatialCoordinates(input.filePath);
     const hash = HashUtils.sha256(input.content);
     const V: number[] = [];
-    for (let i = 0; i < 384; i++) {
+    for (let i = 0; i < this.vectorDimension; i++) {
       V.push((hash.charCodeAt(i % hash.length) - 48) / 48 * 2 - 1);
     }
 
