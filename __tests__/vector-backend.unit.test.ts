@@ -4,7 +4,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { SqliteVecStore, createMemoryKernel, createMemoryKernelFromEnv } from '../src/public.js';
+import { SqliteVecStore, createMemoryKernel } from '../src/public.js';
 
 function tempDir(): string {
   const dir = join(tmpdir(), `core-vector-backend-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -82,46 +82,32 @@ describe('Vector backends v1.12', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('createMemoryKernelFromEnv keeps AB_VECTOR_DIMENSION compatible for legacy installs', async () => {
-    const dir = tempDir();
-    const envPath = join(dir, '.agent-brain.env');
-    const dbPath = join(dir, 'kernel-env-4096.db');
-    const previousDimension = process.env.AB_VECTOR_DIMENSION;
-    const previousDb = process.env.COGMEM_DB;
-    const previousVectorBackend = process.env.COGMEM_VECTOR_BACKEND;
-    delete process.env.AB_VECTOR_DIMENSION;
-    delete process.env.COGMEM_DB;
-    delete process.env.COGMEM_VECTOR_BACKEND;
-    await Bun.write(envPath, [
-      `COGMEM_DB=${dbPath}`,
-      'COGMEM_VECTOR_BACKEND=sqlite-vec',
-      'AB_VECTOR_DIMENSION=4096',
-    ].join('\n'));
+  test('AB_VECTOR_DIMENSION does not change default kernel dimensions', async () => {
+    const proc = Bun.spawn({
+      cmd: [
+        'bun',
+        '--eval',
+        [
+          "import { createMemoryKernel } from './src/public.js';",
+          'const kernel = createMemoryKernel();',
+          'console.log(JSON.stringify(kernel.vectorStore.getStats()));',
+          'kernel.close();',
+        ].join(' '),
+      ],
+      cwd: join(import.meta.dir, '..'),
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        AB_VECTOR_DIMENSION: '4096',
+      },
+    });
 
-    const kernel = createMemoryKernelFromEnv(envPath);
-    try {
-      const neuron = await kernel.ingest({
-        projectId: 'vector-env-4096',
-        content: 'Legacy env vector dimension should remain supported.',
-        sourceType: 'chat',
-      });
-
-      expect(neuron.coordinates.V).toHaveLength(4096);
-      expect(kernel.vectorStore.getStats()).toMatchObject({
-        backend: 'sqlite-vec',
-        dimension: 4096,
-        size: 1,
-      });
-    } finally {
-      kernel.close();
-      if (previousDimension === undefined) delete process.env.AB_VECTOR_DIMENSION;
-      else process.env.AB_VECTOR_DIMENSION = previousDimension;
-      if (previousDb === undefined) delete process.env.COGMEM_DB;
-      else process.env.COGMEM_DB = previousDb;
-      if (previousVectorBackend === undefined) delete process.env.COGMEM_VECTOR_BACKEND;
-      else process.env.COGMEM_VECTOR_BACKEND = previousVectorBackend;
-      rmSync(dir, { recursive: true, force: true });
-    }
+    const output = await new Response(proc.stdout).text();
+    const errorOutput = await new Response(proc.stderr).text();
+    expect(await proc.exited).toBe(0);
+    expect(errorOutput).toBe('');
+    expect(JSON.parse(output).dimension).toBe(384);
   });
 
   test('MemoryKernel still supports the hnswlib backend flag for existing users', () => {

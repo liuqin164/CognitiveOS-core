@@ -5,6 +5,7 @@
 - Split the memory kernel into an independently publishable core package.
 - Added a stable Cogmem home directory with TOML configuration at `~/.cogmem/config.toml`.
 - Added `core.vector_dimension` for TOML-based embedding dimension configuration, including high-dimension warnings.
+- Removed legacy env-file/global-env configuration entrypoints; TOML is now the only supported configuration surface.
 - Added `cogmem-init` and `cogmem-doctor` for first-run setup and validation.
 - Added `cogmem-import-openclaw` and `cogmem-import-hermes` for command-triggered migration from existing agent workspaces.
 - Added `KernelAgentMemoryBackend` for external agent integrations.

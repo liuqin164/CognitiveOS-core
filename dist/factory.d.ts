@@ -12,6 +12,7 @@ import type { ReEmbeddingStatus } from './embedding/ReEmbeddingStatus.js';
 import type { EncryptionProvider } from './encryption/index.js';
 import { type RedactionPolicy } from './governance/index.js';
 import { type EnvLike } from './config/CogmemConfig.js';
+import { ModelRegistry } from './models/ModelRegistry.js';
 import type { Embedder } from './store/Embedder.js';
 import { CognitiveGraphStore } from './store/CognitiveGraphStore.js';
 import { EntityStore } from './store/EntityStore.js';
@@ -26,21 +27,17 @@ export interface MemoryKernelOptions {
     dbPath?: string;
     embedder?: Embedder;
     embeddingProvider?: EmbeddingProvider;
+    modelRegistry?: ModelRegistry;
     maxOfflinePipelineBudgetMs?: number;
     vectorBackend?: VectorBackend;
     vectorDimension?: number;
     encryptionProvider?: EncryptionProvider;
     redactionPolicy?: RedactionPolicy | false;
 }
-export interface MemoryKernelFromEnvOptions extends MemoryKernelOptions {
-    envPath?: string;
-    autoLoadEnv?: boolean;
-}
 export interface MemoryKernelFromConfigOptions extends MemoryKernelOptions {
     configPath?: string;
     cwd?: string;
     env?: EnvLike;
-    autoApplyEnv?: boolean;
 }
 export interface MemoryKernelConsolidationOptions {
     projectId?: string;
@@ -100,6 +97,7 @@ export declare class MemoryKernel {
     private readonly dbPath;
     private readonly embedder;
     private readonly embeddingProvider?;
+    private readonly modelRegistry;
     private readonly encryptionProvider?;
     private readonly piiRedactor?;
     private readonly interactionUnitStore;
@@ -149,7 +147,7 @@ export declare class MemoryKernel {
             synapseCount: number;
             anchorCount: number;
         };
-        vectorRecall: "disabled" | "degraded" | "active";
+        vectorRecall: "active" | "degraded" | "disabled";
         embeddingModelId: string | undefined;
         hasStaleVectors: boolean;
         pipelineLastRunAt: number | undefined;
@@ -192,9 +190,6 @@ export declare class MemoryKernel {
     private ensureGovernanceAuditTable;
 }
 export declare function createMemoryKernel(options?: MemoryKernelOptions): MemoryKernel;
-export declare function loadAgentBrainEnv(envPath?: string): void;
-export declare function createMemoryKernelFromEnv(envPath?: string): MemoryKernel;
-export declare function createMemoryKernelFromEnv(options?: MemoryKernelFromEnvOptions): MemoryKernel;
 export declare function createMemoryKernelFromConfig(configPath?: string): MemoryKernel;
 export declare function createMemoryKernelFromConfig(options?: MemoryKernelFromConfigOptions): MemoryKernel;
 //# sourceMappingURL=factory.d.ts.map

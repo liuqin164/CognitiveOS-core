@@ -41,13 +41,6 @@ export class RecallSufficiencyGate {
     constructor(config) {
         this.config = { ...DEFAULT_CONFIG, ...config };
     }
-    static fromEnv(env = process.env) {
-        return new RecallSufficiencyGate({
-            coverageThreshold: numberFromEnv(env.AGENT_BRAIN_RECALL_GATE_COVERAGE_THRESHOLD, DEFAULT_CONFIG.coverageThreshold),
-            topConfidenceThreshold: numberFromEnv(env.AGENT_BRAIN_RECALL_GATE_TOP_CONFIDENCE_THRESHOLD, DEFAULT_CONFIG.topConfidenceThreshold),
-            maxSuggestedFollowups: DEFAULT_CONFIG.maxSuggestedFollowups
-        });
-    }
     evaluate(input) {
         const compiled = this.compiler.compileQuery({ text: input.query, projectId: input.projectId });
         const targets = Array.from(new Set([
@@ -133,10 +126,6 @@ export class RecallSufficiencyGate {
         ];
         return parts.join('\n').toLowerCase();
     }
-}
-function numberFromEnv(value, fallback) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
 }
 function textIncludes(text, needle) {
     return text.toLowerCase().includes(needle.toLowerCase());

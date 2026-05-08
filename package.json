@@ -12,16 +12,17 @@
     }
   },
   "bin": {
-    "cogmem-init": "./dist/bin/init.js",
-    "cogmem-doctor": "./dist/bin/doctor.js",
-    "cogmem-import-openclaw": "./dist/bin/import-openclaw.js",
-    "cogmem-import-hermes": "./dist/bin/import-hermes.js",
-    "cogmem-snapshot": "./dist/bin/snapshot.js",
-    "cogmem-re-embed": "./dist/bin/re-embed.js",
-    "cogmem-migrate-vectors": "./dist/bin/migrate-vectors.js"
+    "cogmem-init": "dist/bin/init.js",
+    "cogmem-doctor": "dist/bin/doctor.js",
+    "cogmem-import-openclaw": "dist/bin/import-openclaw.js",
+    "cogmem-import-hermes": "dist/bin/import-hermes.js",
+    "cogmem-snapshot": "dist/bin/snapshot.js",
+    "cogmem-re-embed": "dist/bin/re-embed.js",
+    "cogmem-migrate-vectors": "dist/bin/migrate-vectors.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "bun run clean && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bash ../../scripts/v1_9_6_active_core_tests.sh"
   },

@@ -10,5 +10,5 @@ export interface DeepWriteConfig {
     redactionEnabled: boolean;
     promoteCausalLinks: boolean;
 }
-export declare function resolveDeepWriteConfig(env?: NodeJS.ProcessEnv): DeepWriteConfig;
+export declare function resolveDeepWriteConfig(env?: Record<string, string | undefined>): DeepWriteConfig;
 //# sourceMappingURL=DeepWriteConfig.d.ts.map

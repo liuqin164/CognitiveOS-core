@@ -21,14 +21,11 @@ export {
   MemoryKernel,
   createMemoryKernel,
   createMemoryKernelFromConfig,
-  createMemoryKernelFromEnv,
-  loadAgentBrainEnv,
 } from './factory.js';
 export type {
   ForgetUserResult,
   GovernanceAuditRecord,
   MemoryKernelFromConfigOptions,
-  MemoryKernelFromEnvOptions,
   MemoryKernelNavigationOptions,
   MemoryKernelNavigationResult,
   MemoryKernelOptions,
@@ -39,7 +36,6 @@ export type {
  * @stable @since 2.0.0
  */
 export {
-  applyCogmemConfigToEnv,
   defaultCogmemConfigPath,
   defaultCogmemHome,
   loadCogmemConfig,

@@ -17,7 +17,7 @@ function parseMode(value) {
         ? normalized
         : 'off';
 }
-export function resolveDeepWriteConfig(env = process.env) {
+export function resolveDeepWriteConfig(env = {}) {
     const enabled = parseBoolean(env.AGENT_BRAIN_DEEP_WRITE_ENABLED, false);
     const mode = enabled ? parseMode(env.AGENT_BRAIN_DEEP_WRITE_MODE || 'shadow') : 'off';
     return {

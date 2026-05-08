@@ -5,15 +5,17 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { AesGcmEncryptionProvider } from '../encryption/index.js';
 import type { MemoryKernelOptions } from '../factory.js';
 import type { RedactionPolicy } from '../governance/index.js';
+import { ModelRegistry } from '../models/ModelRegistry.js';
+import type { ModelRoleConfig, ModelRoleName, ProviderType } from '../models/ModelRole.js';
 import type { VectorBackend } from '../store/IVectorStore.js';
-import type { CoreEnvDiagnostic } from './CoreEnvConfig.js';
 import {
+  type ConfigDiagnosticLike,
   DEFAULT_VECTOR_DIMENSION,
   addVectorDimensionDiagnostics,
   parseVectorDimensionValue,
 } from './VectorDimension.js';
 
-export type CogmemConfigKind = 'toml' | 'env' | 'missing';
+export type CogmemConfigKind = 'toml' | 'missing';
 export type EnvLike = Record<string, string | undefined>;
 
 export interface CogmemConfigResolution {
@@ -31,7 +33,7 @@ export interface LoadedCogmemConfig {
   configPath: string;
   homeDir: string;
   options: MemoryKernelOptions;
-  env: Record<string, string>;
+  modelRegistry: ModelRegistry;
   paths: {
     embeddingsDir: string;
     snapshotsDir: string;
@@ -47,7 +49,7 @@ export interface LoadedCogmemConfig {
       workspaceDir?: string;
     };
   };
-  diagnostics: CoreEnvDiagnostic[];
+  diagnostics: ConfigDiagnosticLike[];
 }
 
 export interface LoadCogmemConfigOptions extends CogmemConfigResolutionOptions {}
@@ -55,7 +57,6 @@ export interface LoadCogmemConfigOptions extends CogmemConfigResolutionOptions {
 type UnknownRecord = Record<string, unknown>;
 
 export function defaultCogmemHome(env: EnvLike = process.env): string {
-  if (env.COGMEM_HOME?.trim()) return expandHome(env.COGMEM_HOME.trim(), env);
   return join(env.HOME || homedir(), '.cogmem');
 }
 
@@ -66,7 +67,7 @@ export function defaultCogmemConfigPath(env: EnvLike = process.env): string {
 export function resolveCogmemConfigPath(options: CogmemConfigResolutionOptions = {}): CogmemConfigResolution {
   const cwd = resolve(options.cwd || process.cwd());
   const env = options.env || process.env;
-  const explicit = options.configPath || env.COGMEM_CONFIG;
+  const explicit = options.configPath;
   if (explicit?.trim()) {
     return { kind: 'toml', path: resolvePath(explicit.trim(), cwd, env) };
   }
@@ -77,26 +78,19 @@ export function resolveCogmemConfigPath(options: CogmemConfigResolutionOptions =
   const globalConfig = defaultCogmemConfigPath(env);
   if (existsSync(globalConfig)) return { kind: 'toml', path: globalConfig };
 
-  const legacyEnv = findUp(cwd, '.agent-brain.env');
-  if (legacyEnv) return { kind: 'env', path: legacyEnv };
-
   return { kind: 'missing', path: globalConfig };
 }
 
 export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedCogmemConfig {
   const resolution = resolveCogmemConfigPath(options);
   if (resolution.kind !== 'toml') {
-    throw new Error(
-      resolution.kind === 'env'
-        ? `Found legacy env config at ${resolution.path}; pass it to createMemoryKernelFromEnv() or migrate it with cogmem-init.`
-        : `Missing cogmem config at ${resolution.path}. Run cogmem-init first.`
-    );
+    throw new Error(`Missing cogmem config at ${resolution.path}. Run cogmem-init first.`);
   }
 
   const env = options.env || process.env;
   const configPath = resolution.path;
   const homeDir = dirname(configPath);
-  const diagnostics: CoreEnvDiagnostic[] = [];
+  const diagnostics: ConfigDiagnosticLike[] = [];
   let parsed: unknown;
 
   try {
@@ -122,16 +116,13 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
   const hermes = section(integrations, 'hermes');
 
   const optionsOut: MemoryKernelOptions = {};
-  const envOut: Record<string, string> = {};
 
   const dbPath = stringValue(core.db_path) || 'memory.db';
   optionsOut.dbPath = resolveConfigPath(interpolate(dbPath, env, diagnostics), homeDir, env);
-  envOut.COGMEM_DB = optionsOut.dbPath;
 
   const vectorBackend = stringValue(core.vector_backend) || 'sqlite-vec';
   if (vectorBackend === 'sqlite-vec' || vectorBackend === 'hnswlib') {
     optionsOut.vectorBackend = vectorBackend as VectorBackend;
-    envOut.COGMEM_VECTOR_BACKEND = vectorBackend;
   } else {
     diagnostics.push({
       severity: 'error',
@@ -160,7 +151,6 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
   );
   if (vectorDimension !== undefined) {
     optionsOut.vectorDimension = vectorDimension;
-    envOut.AB_VECTOR_DIMENSION = String(vectorDimension);
     addVectorDimensionDiagnostics(vectorDimension, diagnostics);
   }
 
@@ -170,15 +160,12 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
   const piiSsn = booleanValue(governance.pii_redact_ssn);
   if (piiEmail !== undefined) {
     redactionPolicy.email = piiEmail;
-    envOut.COGMEM_PII_REDACT_EMAIL = String(piiEmail);
   }
   if (piiPhone !== undefined) {
     redactionPolicy.phone = piiPhone;
-    envOut.COGMEM_PII_REDACT_PHONE = String(piiPhone);
   }
   if (piiSsn !== undefined) {
     redactionPolicy.ssn = piiSsn;
-    envOut.COGMEM_PII_REDACT_SSN = String(piiSsn);
   }
   if (Object.keys(redactionPolicy).length > 0) optionsOut.redactionPolicy = redactionPolicy;
 
@@ -188,7 +175,6 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
     env,
     diagnostics
   );
-  if (encryptionPassphrase) envOut.COGMEM_ENCRYPTION_PASSPHRASE = encryptionPassphrase;
   if (encryptionEnabled) {
     if (encryptionPassphrase) {
       optionsOut.encryptionProvider = AesGcmEncryptionProvider.fromPassphrase(encryptionPassphrase);
@@ -201,9 +187,12 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
     }
   }
 
-  applyRoleEnv(envOut, 'EMBEDDING', embedding, env, diagnostics);
-  applyRoleEnv(envOut, 'MEMORY', memoryModel, env, diagnostics, 'rule_only');
-  applyRoleEnv(envOut, 'REASONING', reasoningModel, env, diagnostics, 'memory');
+  const modelRegistry = new ModelRegistry({
+    embedding: buildRoleConfig('embedding', embedding, env, diagnostics),
+    memory: buildRoleConfig('memory', memoryModel, env, diagnostics, 'rule_only'),
+    reasoning: buildRoleConfig('reasoning', reasoningModel, env, diagnostics, 'memory'),
+  });
+  optionsOut.modelRegistry = modelRegistry;
 
   const embeddingsDir = resolveConfigPath(
     interpolate(stringValue(paths.embeddings_dir) || 'embeddings', env, diagnostics),
@@ -225,20 +214,12 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
   const hermesEnabled = booleanValue(hermes.enabled) === true;
   const openclawWorkspaceDir = maybeResolveWorkspace(openclaw.workspace_dir, homeDir, env, diagnostics);
   const hermesWorkspaceDir = maybeResolveWorkspace(hermes.workspace_dir, homeDir, env, diagnostics);
-  if (openclawEnabled) {
-    envOut.COGMEM_OPENCLAW_ENABLED = 'true';
-    if (openclawWorkspaceDir) envOut.COGMEM_OPENCLAW_WORKSPACE_DIR = openclawWorkspaceDir;
-  }
-  if (hermesEnabled) {
-    envOut.COGMEM_HERMES_ENABLED = 'true';
-    if (hermesWorkspaceDir) envOut.COGMEM_HERMES_WORKSPACE_DIR = hermesWorkspaceDir;
-  }
 
   return {
     configPath,
     homeDir,
     options: optionsOut,
-    env: envOut,
+    modelRegistry,
     paths: { embeddingsDir, snapshotsDir, logsDir },
     integrations: {
       openclaw: { enabled: openclawEnabled, workspaceDir: openclawWorkspaceDir },
@@ -248,52 +229,44 @@ export function loadCogmemConfig(options: LoadCogmemConfigOptions = {}): LoadedC
   };
 }
 
-export function applyCogmemConfigToEnv(
-  loaded: LoadedCogmemConfig,
-  targetEnv: EnvLike = process.env,
-): void {
-  for (const [key, value] of Object.entries(loaded.env)) {
-    targetEnv[key] = value;
-  }
-}
-
-function applyRoleEnv(
-  target: Record<string, string>,
-  role: 'EMBEDDING' | 'MEMORY' | 'REASONING',
+function buildRoleConfig(
+  role: ModelRoleName,
   values: UnknownRecord,
   env: EnvLike,
-  diagnostics: CoreEnvDiagnostic[],
-  fallback?: string,
-): void {
-  const prefix = `AGENT_BRAIN_MODEL_${role}`;
+  diagnostics: ConfigDiagnosticLike[],
+  fallback?: ModelRoleName | 'rule_only' | 'deterministic_local',
+): ModelRoleConfig {
   const provider = normalizeRoleProvider(role, stringValue(values.provider), diagnostics);
   const baseUrl = stringValue(values.base_url);
   const model = stringValue(values.model) || defaultRoleModel(role);
   const apiKey = stringValue(values.api_key);
   const timeoutMs = numberValue(values.timeout_ms) ?? defaultRoleTimeout(role);
 
-  target[`${prefix}_PROVIDER`] = provider;
-  target[`${prefix}_BASE_URL`] = baseUrl
-    ? interpolate(baseUrl, env, diagnostics)
-    : provider === 'openai_compatible'
-      ? 'http://localhost:11434/v1'
-      : '';
-  target[`${prefix}_API_KEY`] = apiKey ? interpolate(apiKey, env, diagnostics) : '';
-  target[`${prefix}_NAME`] = interpolate(model, env, diagnostics);
-  target[`${prefix}_TIMEOUT_MS`] = String(timeoutMs);
-  if (fallback) target[`${prefix}_FALLBACK`] = fallback;
+  return {
+    role,
+    provider,
+    baseUrl: baseUrl
+      ? interpolate(baseUrl, env, diagnostics)
+      : provider === 'openai_compatible'
+        ? 'http://localhost:11434/v1'
+        : '',
+    apiKey: apiKey ? interpolate(apiKey, env, diagnostics) : '',
+    modelName: interpolate(model, env, diagnostics),
+    timeoutMs,
+    fallback,
+  };
 }
 
 function normalizeRoleProvider(
-  role: 'EMBEDDING' | 'MEMORY' | 'REASONING',
+  role: ModelRoleName,
   rawProvider: string | undefined,
-  diagnostics: CoreEnvDiagnostic[],
-): string {
+  diagnostics: ConfigDiagnosticLike[],
+): ProviderType {
   const provider = rawProvider || defaultRoleProvider(role);
-  const valid = role === 'EMBEDDING'
+  const valid = role === 'embedding'
     ? ['deterministic_local', 'openai_compatible']
     : ['rule_only', 'openai_compatible', 'anthropic'];
-  if (valid.includes(provider)) return provider;
+  if (valid.includes(provider)) return provider as ProviderType;
   diagnostics.push({
     severity: 'error',
     code: 'invalid_model_provider',
@@ -302,30 +275,30 @@ function normalizeRoleProvider(
   return defaultRoleProvider(role);
 }
 
-function defaultRoleProvider(role: 'EMBEDDING' | 'MEMORY' | 'REASONING'): string {
-  return role === 'EMBEDDING' ? 'deterministic_local' : 'rule_only';
+function defaultRoleProvider(role: ModelRoleName): ProviderType {
+  return role === 'embedding' ? 'deterministic_local' : 'rule_only';
 }
 
-function defaultRoleModel(role: 'EMBEDDING' | 'MEMORY' | 'REASONING'): string {
-  return role === 'EMBEDDING' ? 'deterministic_local' : 'rule_only';
+function defaultRoleModel(role: ModelRoleName): string {
+  return role === 'embedding' ? 'deterministic_local' : 'rule_only';
 }
 
-function defaultRoleTimeout(role: 'EMBEDDING' | 'MEMORY' | 'REASONING'): number {
-  return role === 'EMBEDDING' ? 30000 : 60000;
+function defaultRoleTimeout(role: ModelRoleName): number {
+  return role === 'embedding' ? 30000 : 60000;
 }
 
 function maybeResolveWorkspace(
   value: unknown,
   baseDir: string,
   env: EnvLike,
-  diagnostics: CoreEnvDiagnostic[],
+  diagnostics: ConfigDiagnosticLike[],
 ): string | undefined {
   const raw = stringValue(value);
   if (!raw) return undefined;
   return resolveConfigPath(interpolate(raw, env, diagnostics), baseDir, env);
 }
 
-function interpolate(value: string, env: EnvLike, diagnostics: CoreEnvDiagnostic[]): string {
+function interpolate(value: string, env: EnvLike, diagnostics: ConfigDiagnosticLike[]): string {
   return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, key: string) => {
     const resolved = env[key];
     if (resolved === undefined) {

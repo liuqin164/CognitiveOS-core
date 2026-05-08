@@ -5,15 +5,10 @@ import { SemanticBackendRuntime } from '../backend/SemanticBackend.js';
 import { ModelRegistry } from '../models/ModelRegistry.js';
 import { createMemoryReviewAdapter } from '../models/adapters/MemoryReviewAdapter.js';
 export function resolveAlgorithmReviewBackendMode() {
-    const raw = (process.env.AGENT_BRAIN_ALGORITHM_REVIEW_BACKEND || 'noop').trim().toLowerCase();
-    if (raw === 'phase1_rule')
-        return 'phase1_rule';
-    if (raw === 'model_backed_phase2')
-        return 'model_backed_phase2';
     return 'noop';
 }
 export function createAlgorithmReviewBackend(options = {}) {
-    const registry = options.modelRegistry || ModelRegistry.fromEnv();
+    const registry = options.modelRegistry || ModelRegistry.defaults();
     if (!registry.isRuleOnly('memory')) {
         return createMemoryReviewAdapter(registry);
     }

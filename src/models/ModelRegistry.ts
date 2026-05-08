@@ -10,67 +10,42 @@ import type {
 import { AnthropicClient } from './providers/AnthropicClient.js';
 import { OpenAICompatibleClient } from './providers/OpenAICompatibleClient.js';
 
-function parseTimeout(value: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(value || '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function parseProvider(value: string | undefined, fallback: ProviderType): ProviderType {
-  const normalized = (value || fallback).trim() as ProviderType;
-  return normalized === 'openai_compatible'
-    || normalized === 'anthropic'
-    || normalized === 'rule_only'
-    || normalized === 'deterministic_local'
-    ? normalized
-    : fallback;
-}
-
-function parseFallback(
-  value: string | undefined,
-  fallback: ModelRoleName | 'rule_only' | 'deterministic_local'
-): ModelRoleName | 'rule_only' | 'deterministic_local' {
-  const normalized = (value || fallback).trim();
-  return normalized === 'memory'
-    || normalized === 'reasoning'
-    || normalized === 'embedding'
-    || normalized === 'rule_only'
-    || normalized === 'deterministic_local'
-    ? normalized
-    : fallback;
-}
-
 export class ModelRegistry {
   constructor(private config: ModelRegistryConfig) {}
 
-  static fromEnv(): ModelRegistry {
-    return new ModelRegistry({
+  static defaultConfig(): ModelRegistryConfig {
+    return {
       memory: {
         role: 'memory',
-        provider: parseProvider(process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER, 'rule_only'),
-        baseUrl: process.env.AGENT_BRAIN_MODEL_MEMORY_BASE_URL || 'http://localhost:11434/v1',
-        apiKey: process.env.AGENT_BRAIN_MODEL_MEMORY_API_KEY || '',
-        modelName: process.env.AGENT_BRAIN_MODEL_MEMORY_NAME || 'qwen2.5:7b',
-        timeoutMs: parseTimeout(process.env.AGENT_BRAIN_MODEL_MEMORY_TIMEOUT_MS, 60000),
-        fallback: parseFallback(process.env.AGENT_BRAIN_MODEL_MEMORY_FALLBACK, 'rule_only')
+        provider: 'rule_only',
+        baseUrl: '',
+        apiKey: '',
+        modelName: 'rule_only',
+        timeoutMs: 60000,
+        fallback: 'rule_only'
       },
       reasoning: {
         role: 'reasoning',
-        provider: parseProvider(process.env.AGENT_BRAIN_MODEL_REASONING_PROVIDER, 'rule_only'),
-        baseUrl: process.env.AGENT_BRAIN_MODEL_REASONING_BASE_URL || 'http://localhost:11434/v1',
-        apiKey: process.env.AGENT_BRAIN_MODEL_REASONING_API_KEY || '',
-        modelName: process.env.AGENT_BRAIN_MODEL_REASONING_NAME || 'qwen2.5:7b',
-        timeoutMs: parseTimeout(process.env.AGENT_BRAIN_MODEL_REASONING_TIMEOUT_MS, 60000),
-        fallback: parseFallback(process.env.AGENT_BRAIN_MODEL_REASONING_FALLBACK, 'memory')
+        provider: 'rule_only',
+        baseUrl: '',
+        apiKey: '',
+        modelName: 'rule_only',
+        timeoutMs: 60000,
+        fallback: 'memory'
       },
       embedding: {
         role: 'embedding',
-        provider: parseProvider(process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER, 'deterministic_local'),
-        baseUrl: process.env.AGENT_BRAIN_MODEL_EMBEDDING_BASE_URL || 'http://localhost:11434/v1',
-        apiKey: process.env.AGENT_BRAIN_MODEL_EMBEDDING_API_KEY || '',
-        modelName: process.env.AGENT_BRAIN_MODEL_EMBEDDING_NAME || 'nomic-embed-text',
-        timeoutMs: parseTimeout(process.env.AGENT_BRAIN_MODEL_EMBEDDING_TIMEOUT_MS, 30000)
+        provider: 'deterministic_local',
+        baseUrl: '',
+        apiKey: '',
+        modelName: 'deterministic_local',
+        timeoutMs: 30000
       }
-    });
+    };
+  }
+
+  static defaults(): ModelRegistry {
+    return new ModelRegistry(ModelRegistry.defaultConfig());
   }
 
   getTextGenerator(role: 'memory' | 'reasoning'): TextGenerateFn {

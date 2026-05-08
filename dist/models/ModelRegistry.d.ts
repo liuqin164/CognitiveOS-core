@@ -2,7 +2,8 @@ import type { EmbedFn, ModelRegistryConfig, ModelRoleConfig, ModelRoleName, Text
 export declare class ModelRegistry {
     private config;
     constructor(config: ModelRegistryConfig);
-    static fromEnv(): ModelRegistry;
+    static defaultConfig(): ModelRegistryConfig;
+    static defaults(): ModelRegistry;
     getTextGenerator(role: 'memory' | 'reasoning'): TextGenerateFn;
     getRoleConfig(role: ModelRoleName): ModelRoleConfig;
     getEmbedder(): EmbedFn;

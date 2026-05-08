@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { BeliefStore } from './belief/BeliefStore.js';
 import { IngestionCursorStore } from './batch/IngestionCursorStore.js';
@@ -43,8 +42,8 @@ import { UniverseTraversalExecutor } from './retrieval/UniverseTraversalExecutor
 import { NeuronEmbeddingStore } from './embedding/NeuronEmbeddingStore.js';
 import { ReEmbeddingPipeline } from './embedding/ReEmbeddingPipeline.js';
 import { PiiRedactor } from './governance/index.js';
-import { parseCoreEnvConfig } from './config/CoreEnvConfig.js';
-import { applyCogmemConfigToEnv, loadCogmemConfig, resolveCogmemConfigPath, } from './config/CogmemConfig.js';
+import { loadCogmemConfig, resolveCogmemConfigPath, } from './config/CogmemConfig.js';
+import { ModelRegistry } from './models/ModelRegistry.js';
 import { IterativeLLMClarifier } from './routing/IterativeLLMClarifier.js';
 import { ToolUsePolicy } from './routing/ToolUsePolicy.js';
 import { createConfiguredEmbedder } from './store/EmbedderFactory.js';
@@ -82,6 +81,7 @@ export class MemoryKernel {
     dbPath;
     embedder;
     embeddingProvider;
+    modelRegistry;
     encryptionProvider;
     piiRedactor;
     interactionUnitStore;
@@ -121,6 +121,7 @@ export class MemoryKernel {
         this.ensureMetaTable(db);
         this.ensureGovernanceAuditTable(db);
         const vectorDimension = options.vectorDimension ?? config.vector.dimension;
+        this.modelRegistry = options.modelRegistry ?? ModelRegistry.defaults();
         this.beliefStore = new BeliefStore(this.dbPath, this.eventStore);
         this.cursorStore = new IngestionCursorStore(this.dbPath);
         this.vectorStore = options.vectorBackend === 'hnswlib'
@@ -140,7 +141,7 @@ export class MemoryKernel {
         this.topicSummaryBoard = new TopicSummaryBoard(this.memoryGraph, this.summaryStore);
         this.topicDecayPolicy = new TopicDecayPolicy(this.memoryGraph);
         this.localSemanticCompiler = new LocalSemanticCompiler();
-        this.embedder = options.embedder ?? createConfiguredEmbedder(vectorDimension);
+        this.embedder = options.embedder ?? createConfiguredEmbedder(vectorDimension, this.modelRegistry);
         this.embeddingProvider = options.embeddingProvider;
         this.universeNavigator = new UniverseNavigator(new QueryCompiler(this.localSemanticCompiler, new EntityResolutionEngine(this.entityStore)), new RetrievalPlanner(), new TemporalBranchSearch(this.topologyStore, this.temporalAdjacencyStore), new PulseRetrievalEngine(this.temporalAdjacencyStore, new EntityActivationIndex(this.entityStore, this.factStore)), new NarrativeRecallAssembler(), new UniverseTraversalExecutor());
         this.topicClassifier = new TopicClassifier(this.memoryGraph, { confidenceThreshold: 0.25, enableEmbedding: true, embeddingThreshold: 0.75 }, this.topicRegistry, this.embedder);
@@ -665,45 +666,6 @@ export class MemoryKernel {
 export function createMemoryKernel(options = {}) {
     return new MemoryKernel(options);
 }
-export function loadAgentBrainEnv(envPath = '.agent-brain.env') {
-    try {
-        if (!existsSync(envPath))
-            return;
-        const lines = readFileSync(envPath, 'utf8').split('\n');
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#'))
-                continue;
-            const eq = trimmed.indexOf('=');
-            if (eq === -1)
-                continue;
-            const key = trimmed.slice(0, eq).trim();
-            const value = trimmed.slice(eq + 1).trim();
-            if (key && !(key in process.env))
-                process.env[key] = value;
-        }
-    }
-    catch {
-        // Legacy AgentBrain.create() silently ignored env loading failures.
-    }
-}
-export function createMemoryKernelFromEnv(input = {}) {
-    const options = typeof input === 'string' ? { envPath: input } : input;
-    if (options.autoLoadEnv !== false)
-        loadAgentBrainEnv(options.envPath ?? '.agent-brain.env');
-    const { envPath: _envPath, autoLoadEnv: _autoLoadEnv, ...explicitOptions } = options;
-    const parsed = parseCoreEnvConfig(process.env);
-    const error = parsed.diagnostics.find((diagnostic) => {
-        if (diagnostic.code === 'invalid_vector_backend'
-            && explicitOptions.vectorBackend !== undefined) {
-            return false;
-        }
-        return diagnostic.severity === 'error';
-    });
-    if (error)
-        throw new Error(`${error.code}: ${error.message}`);
-    return createMemoryKernel({ ...parsed.options, ...explicitOptions });
-}
 export function createMemoryKernelFromConfig(input = {}) {
     const options = typeof input === 'string' ? { configPath: input } : input;
     const resolution = resolveCogmemConfigPath({
@@ -711,10 +673,6 @@ export function createMemoryKernelFromConfig(input = {}) {
         cwd: options.cwd,
         env: options.env,
     });
-    if (resolution.kind === 'env') {
-        const { configPath: _configPath, cwd: _cwd, env: _env, autoApplyEnv: _autoApplyEnv, ...explicitOptions } = options;
-        return createMemoryKernelFromEnv({ envPath: resolution.path, ...explicitOptions });
-    }
     if (resolution.kind === 'missing') {
         throw new Error(`missing_cogmem_config: Missing cogmem config at ${resolution.path}. Run cogmem-init first.`);
     }
@@ -726,9 +684,7 @@ export function createMemoryKernelFromConfig(input = {}) {
     const error = loaded.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
     if (error)
         throw new Error(`${error.code}: ${error.message}`);
-    if (options.autoApplyEnv !== false)
-        applyCogmemConfigToEnv(loaded, process.env);
-    const { configPath: _configPath, cwd: _cwd, env: _env, autoApplyEnv: _autoApplyEnv, ...explicitOptions } = options;
+    const { configPath: _configPath, cwd: _cwd, env: _env, ...explicitOptions } = options;
     return createMemoryKernel({ ...loaded.options, ...explicitOptions });
 }
 function uniqueStrings(values) {

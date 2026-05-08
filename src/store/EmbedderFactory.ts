@@ -10,13 +10,12 @@ export interface EmbeddingBackendInfo {
   mayDownloadModels: boolean;
 }
 
-export function resolveEmbeddingBackendId(): EmbeddingBackendId {
-  if (process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER === 'openai_compatible') {
+export function resolveEmbeddingBackendId(modelRegistry?: ModelRegistry): EmbeddingBackendId {
+  const role = modelRegistry?.getRoleConfig('embedding');
+  if (role?.provider === 'openai_compatible') {
     return 'openai_compatible';
   }
-  return process.env.AGENT_BRAIN_EMBEDDING_BACKEND === 'transformers_remote'
-    ? 'transformers_remote'
-    : 'deterministic_local';
+  return 'deterministic_local';
 }
 
 export function getEmbeddingBackendInfo(
@@ -57,11 +56,13 @@ class ModelRegistryEmbedder extends Embedder {
   }
 }
 
-export function createConfiguredEmbedder(vectorDimension?: number): Embedder {
-  const backendId = resolveEmbeddingBackendId();
+export function createConfiguredEmbedder(
+  vectorDimension?: number,
+  modelRegistry: ModelRegistry = ModelRegistry.defaults(),
+): Embedder {
+  const backendId = resolveEmbeddingBackendId(modelRegistry);
   if (backendId === 'openai_compatible') {
-    const registry = ModelRegistry.fromEnv();
-    return new ModelRegistryEmbedder(registry.getEmbedder());
+    return new ModelRegistryEmbedder(modelRegistry.getEmbedder());
   }
   return backendId === 'transformers_remote'
     ? new Embedder()

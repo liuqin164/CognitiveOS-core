@@ -85,7 +85,7 @@ export class ExecutionLoop {
                 }
                 case 'llm_clarify': {
                     if (lastRecallResult && !this.options?.recallGateDisabled) {
-                        const gate = this.options?.recallGate ?? RecallSufficiencyGate.fromEnv();
+                        const gate = this.options?.recallGate ?? new RecallSufficiencyGate();
                         recallSufficiencyDecision = gate.evaluate({
                             query: plan.query,
                             layer1Result: lastRecallResult,

@@ -72,7 +72,6 @@ declare class Config {
         vectorEnabled: boolean;
     };
     static default(): AgentBrainConfig;
-    static fromEnv(): AgentBrainConfig;
 }
 export declare const config: Config;
 export { Config as ConfigClass };

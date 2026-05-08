@@ -1,13 +1,12 @@
 import { Embedder } from './Embedder.js';
 import { DeterministicEmbedder } from './DeterministicEmbedder.js';
 import { ModelRegistry } from '../models/ModelRegistry.js';
-export function resolveEmbeddingBackendId() {
-    if (process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER === 'openai_compatible') {
+export function resolveEmbeddingBackendId(modelRegistry) {
+    const role = modelRegistry?.getRoleConfig('embedding');
+    if (role?.provider === 'openai_compatible') {
         return 'openai_compatible';
     }
-    return process.env.AGENT_BRAIN_EMBEDDING_BACKEND === 'transformers_remote'
-        ? 'transformers_remote'
-        : 'deterministic_local';
+    return 'deterministic_local';
 }
 export function getEmbeddingBackendInfo(backendId = resolveEmbeddingBackendId()) {
     if (backendId === 'openai_compatible') {
@@ -41,11 +40,10 @@ class ModelRegistryEmbedder extends Embedder {
         this.isWarmedUp = false;
     }
 }
-export function createConfiguredEmbedder(vectorDimension) {
-    const backendId = resolveEmbeddingBackendId();
+export function createConfiguredEmbedder(vectorDimension, modelRegistry = ModelRegistry.defaults()) {
+    const backendId = resolveEmbeddingBackendId(modelRegistry);
     if (backendId === 'openai_compatible') {
-        const registry = ModelRegistry.fromEnv();
-        return new ModelRegistryEmbedder(registry.getEmbedder());
+        return new ModelRegistryEmbedder(modelRegistry.getEmbedder());
     }
     return backendId === 'transformers_remote'
         ? new Embedder()

@@ -231,6 +231,31 @@ test('OpenClaw import resolves explicit --config relative to the shell cwd', asy
   expect(realpathSync(parsed.dbPath)).toBe(realpathSync(dbPath));
 });
 
+test('agent import CLIs reject legacy env-path configuration', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-openclaw-envpath-reject-'));
+  const envPath = join(dir, '.agent-brain.env');
+  mkdirSync(join(dir, 'memory'));
+  writeFileSync(envPath, 'COGMEM_DB=memory.db\n');
+  writeFileSync(join(dir, 'USER.md'), 'User identity: env path should be rejected.');
+  writeFileSync(join(dir, 'memory', '2026-05-07.md'), 'User: env path import should fail.');
+
+  const result = await runCli([
+    'bun',
+    openClawImportBin,
+    '--workspace',
+    dir,
+    '--env-path',
+    envPath,
+    '--project',
+    'openclaw-envpath-reject',
+    '--json',
+  ]);
+
+  expect(result.stdout).toBe('');
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain('--env-path is no longer supported');
+});
+
 test('agent-facing runbooks tell OpenClaw and Hermes agents how to self-install and migrate', async () => {
   const openclaw = await Bun.file(join(coreRoot, 'examples/openclaw-backend/AGENTS.md')).text();
   const hermes = await Bun.file(join(coreRoot, 'examples/hermes-backend/AGENTS.md')).text();
@@ -251,8 +276,8 @@ test('agent-facing runbooks tell OpenClaw and Hermes agents how to self-install 
 test('package exposes agent migration bins', () => {
   const packageJson = JSON.parse(readFileSync(join(coreRoot, 'package.json'), 'utf8'));
 
-  expect(packageJson.bin['cogmem-import-openclaw']).toBe('./dist/bin/import-openclaw.js');
-  expect(packageJson.bin['cogmem-import-hermes']).toBe('./dist/bin/import-hermes.js');
+  expect(packageJson.bin['cogmem-import-openclaw']).toBe('dist/bin/import-openclaw.js');
+  expect(packageJson.bin['cogmem-import-hermes']).toBe('dist/bin/import-hermes.js');
 });
 
 test('import CLI parser keeps repeated path arguments in order without duplication', () => {

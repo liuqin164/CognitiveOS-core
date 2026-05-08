@@ -15,12 +15,12 @@
  * Primary entry point and kernel lifecycle.
  * @stable @since 1.0.0
  */
-export { MemoryKernel, createMemoryKernel, createMemoryKernelFromConfig, createMemoryKernelFromEnv, loadAgentBrainEnv, } from './factory.js';
+export { MemoryKernel, createMemoryKernel, createMemoryKernelFromConfig, } from './factory.js';
 /**
  * Cogmem runtime home and structured configuration helpers.
  * @stable @since 2.0.0
  */
-export { applyCogmemConfigToEnv, defaultCogmemConfigPath, defaultCogmemHome, loadCogmemConfig, resolveCogmemConfigPath, } from './config/CogmemConfig.js';
+export { defaultCogmemConfigPath, defaultCogmemHome, loadCogmemConfig, resolveCogmemConfigPath, } from './config/CogmemConfig.js';
 /**
  * Agent framework integration facade.
  * @stable @since 2.0.0

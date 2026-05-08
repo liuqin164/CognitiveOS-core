@@ -33,7 +33,7 @@ function parseMode(value: string | undefined): DeepWriteMode {
     : 'off';
 }
 
-export function resolveDeepWriteConfig(env: NodeJS.ProcessEnv = process.env): DeepWriteConfig {
+export function resolveDeepWriteConfig(env: Record<string, string | undefined> = {}): DeepWriteConfig {
   const enabled = parseBoolean(env.AGENT_BRAIN_DEEP_WRITE_ENABLED, false);
   const mode = enabled ? parseMode(env.AGENT_BRAIN_DEEP_WRITE_MODE || 'shadow') : 'off';
 

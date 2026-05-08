@@ -78,7 +78,7 @@ let globalLogger: Logger | null = null;
 export function getLogger(prefix?: string, level?: LogLevel): Logger {
   if (!globalLogger) {
     globalLogger = new Logger({ 
-      level: level || (process.env.AB_LOG_LEVEL as LogLevel) || 'info',
+      level: level || 'info',
       prefix: 'AgentBrain'
     });
   }

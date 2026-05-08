@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 import { BeliefStore } from './belief/BeliefStore.js';
@@ -47,13 +46,12 @@ import { ReEmbeddingPipeline } from './embedding/ReEmbeddingPipeline.js';
 import type { ReEmbeddingStatus } from './embedding/ReEmbeddingStatus.js';
 import type { EncryptionProvider } from './encryption/index.js';
 import { PiiRedactor, type RedactionPolicy } from './governance/index.js';
-import { parseCoreEnvConfig } from './config/CoreEnvConfig.js';
 import {
-  applyCogmemConfigToEnv,
   loadCogmemConfig,
   resolveCogmemConfigPath,
   type EnvLike,
 } from './config/CogmemConfig.js';
+import { ModelRegistry } from './models/ModelRegistry.js';
 import { IterativeLLMClarifier, type BrainToolDispatcherLike } from './routing/IterativeLLMClarifier.js';
 import { ToolUsePolicy } from './routing/ToolUsePolicy.js';
 import { createConfiguredEmbedder } from './store/EmbedderFactory.js';
@@ -89,6 +87,7 @@ export interface MemoryKernelOptions {
   dbPath?: string;
   embedder?: Embedder;
   embeddingProvider?: EmbeddingProvider;
+  modelRegistry?: ModelRegistry;
   maxOfflinePipelineBudgetMs?: number;
   vectorBackend?: VectorBackend;
   vectorDimension?: number;
@@ -96,16 +95,10 @@ export interface MemoryKernelOptions {
   redactionPolicy?: RedactionPolicy | false;
 }
 
-export interface MemoryKernelFromEnvOptions extends MemoryKernelOptions {
-  envPath?: string;
-  autoLoadEnv?: boolean;
-}
-
 export interface MemoryKernelFromConfigOptions extends MemoryKernelOptions {
   configPath?: string;
   cwd?: string;
   env?: EnvLike;
-  autoApplyEnv?: boolean;
 }
 
 export interface MemoryKernelConsolidationOptions {
@@ -171,6 +164,7 @@ export class MemoryKernel {
   private readonly dbPath: string;
   private readonly embedder: Embedder;
   private readonly embeddingProvider?: EmbeddingProvider;
+  private readonly modelRegistry: ModelRegistry;
   private readonly encryptionProvider?: EncryptionProvider;
   private readonly piiRedactor?: PiiRedactor;
   private readonly interactionUnitStore: InteractionUnitStore;
@@ -210,6 +204,7 @@ export class MemoryKernel {
     this.ensureMetaTable(db);
     this.ensureGovernanceAuditTable(db);
     const vectorDimension = options.vectorDimension ?? config.vector.dimension;
+    this.modelRegistry = options.modelRegistry ?? ModelRegistry.defaults();
     this.beliefStore = new BeliefStore(this.dbPath, this.eventStore);
     this.cursorStore = new IngestionCursorStore(this.dbPath);
     this.vectorStore = options.vectorBackend === 'hnswlib'
@@ -229,7 +224,7 @@ export class MemoryKernel {
     this.topicSummaryBoard = new TopicSummaryBoard(this.memoryGraph, this.summaryStore);
     this.topicDecayPolicy = new TopicDecayPolicy(this.memoryGraph);
     this.localSemanticCompiler = new LocalSemanticCompiler();
-    this.embedder = options.embedder ?? createConfiguredEmbedder(vectorDimension);
+    this.embedder = options.embedder ?? createConfiguredEmbedder(vectorDimension, this.modelRegistry);
     this.embeddingProvider = options.embeddingProvider;
     this.universeNavigator = new UniverseNavigator(
       new QueryCompiler(this.localSemanticCompiler, new EntityResolutionEngine(this.entityStore)),
@@ -853,44 +848,6 @@ export function createMemoryKernel(options: MemoryKernelOptions = {}): MemoryKer
   return new MemoryKernel(options);
 }
 
-export function loadAgentBrainEnv(envPath: string = '.agent-brain.env'): void {
-  try {
-    if (!existsSync(envPath)) return;
-    const lines = readFileSync(envPath, 'utf8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eq = trimmed.indexOf('=');
-      if (eq === -1) continue;
-      const key = trimmed.slice(0, eq).trim();
-      const value = trimmed.slice(eq + 1).trim();
-      if (key && !(key in process.env)) process.env[key] = value;
-    }
-  } catch {
-    // Legacy AgentBrain.create() silently ignored env loading failures.
-  }
-}
-
-export function createMemoryKernelFromEnv(envPath?: string): MemoryKernel;
-export function createMemoryKernelFromEnv(options?: MemoryKernelFromEnvOptions): MemoryKernel;
-export function createMemoryKernelFromEnv(input: string | MemoryKernelFromEnvOptions = {}): MemoryKernel {
-  const options = typeof input === 'string' ? { envPath: input } : input;
-  if (options.autoLoadEnv !== false) loadAgentBrainEnv(options.envPath ?? '.agent-brain.env');
-  const { envPath: _envPath, autoLoadEnv: _autoLoadEnv, ...explicitOptions } = options;
-  const parsed = parseCoreEnvConfig(process.env);
-  const error = parsed.diagnostics.find((diagnostic) => {
-    if (
-      diagnostic.code === 'invalid_vector_backend'
-      && explicitOptions.vectorBackend !== undefined
-    ) {
-      return false;
-    }
-    return diagnostic.severity === 'error';
-  });
-  if (error) throw new Error(`${error.code}: ${error.message}`);
-  return createMemoryKernel({ ...parsed.options, ...explicitOptions });
-}
-
 export function createMemoryKernelFromConfig(configPath?: string): MemoryKernel;
 export function createMemoryKernelFromConfig(options?: MemoryKernelFromConfigOptions): MemoryKernel;
 export function createMemoryKernelFromConfig(input: string | MemoryKernelFromConfigOptions = {}): MemoryKernel {
@@ -900,10 +857,6 @@ export function createMemoryKernelFromConfig(input: string | MemoryKernelFromCon
     cwd: options.cwd,
     env: options.env,
   });
-  if (resolution.kind === 'env') {
-    const { configPath: _configPath, cwd: _cwd, env: _env, autoApplyEnv: _autoApplyEnv, ...explicitOptions } = options;
-    return createMemoryKernelFromEnv({ envPath: resolution.path, ...explicitOptions });
-  }
   if (resolution.kind === 'missing') {
     throw new Error(`missing_cogmem_config: Missing cogmem config at ${resolution.path}. Run cogmem-init first.`);
   }
@@ -915,13 +868,11 @@ export function createMemoryKernelFromConfig(input: string | MemoryKernelFromCon
   });
   const error = loaded.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
   if (error) throw new Error(`${error.code}: ${error.message}`);
-  if (options.autoApplyEnv !== false) applyCogmemConfigToEnv(loaded, process.env);
 
   const {
     configPath: _configPath,
     cwd: _cwd,
     env: _env,
-    autoApplyEnv: _autoApplyEnv,
     ...explicitOptions
   } = options;
   return createMemoryKernel({ ...loaded.options, ...explicitOptions });

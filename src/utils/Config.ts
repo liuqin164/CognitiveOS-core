@@ -133,47 +133,7 @@ class Config {
     return { ...DEFAULT_CONFIG };
   }
 
-  static fromEnv(): AgentBrainConfig {
-    return {
-      vector: {
-        dimension: parsePositiveInteger(process.env.AB_VECTOR_DIMENSION, DEFAULT_CONFIG.vector.dimension),
-        maxElements: parsePositiveInteger(process.env.AB_VECTOR_MAX_ELEMENTS, DEFAULT_CONFIG.vector.maxElements),
-        efConstruction: parsePositiveInteger(process.env.AB_VECTOR_EF_CONSTRUCTION, DEFAULT_CONFIG.vector.efConstruction),
-        efSearch: parsePositiveInteger(process.env.AB_VECTOR_EF_SEARCH, DEFAULT_CONFIG.vector.efSearch),
-        topK: parsePositiveInteger(process.env.AB_VECTOR_TOP_K, DEFAULT_CONFIG.vector.topK),
-        indexPath: process.env.AB_VECTOR_INDEX_PATH || DEFAULT_CONFIG.vector.indexPath
-      },
-      embedding: DEFAULT_CONFIG.embedding,
-      energy: {
-        initialEnergy: parsePositiveInteger(process.env.AB_ENERGY_INITIAL, DEFAULT_CONFIG.energy.initialEnergy),
-        decayFactor: parseFloat(process.env.AB_ENERGY_DECAY || String(DEFAULT_CONFIG.energy.decayFactor)),
-        maxHops: parsePositiveInteger(process.env.AB_ENERGY_HOPS, DEFAULT_CONFIG.energy.maxHops)
-      },
-      degradation: {
-        memoryThresholdMB: parsePositiveInteger(process.env.AB_DEGRADE_MEM_THRESHOLD, DEFAULT_CONFIG.degradation.memoryThresholdMB),
-        slowInferenceThresholdMs: parsePositiveInteger(process.env.AB_DEGRADE_SLOW_MS, DEFAULT_CONFIG.degradation.slowInferenceThresholdMs)
-      },
-      index: {
-        anchorInterval: parsePositiveInteger(process.env.AB_INDEX_ANCHOR_INTERVAL, DEFAULT_CONFIG.index.anchorInterval),
-        fullTextSearchLimit: parsePositiveInteger(process.env.AB_INDEX_FTS_LIMIT, DEFAULT_CONFIG.index.fullTextSearchLimit)
-      },
-      logging: {
-        level: (process.env.AB_LOG_LEVEL as any) || DEFAULT_CONFIG.logging.level,
-        enabled: process.env.AB_LOG_ENABLED !== 'false'
-      },
-      recall: {
-        vectorFallbackThreshold: parsePositiveInteger(process.env.AB_RECALL_VECTOR_THRESHOLD, DEFAULT_CONFIG.recall.vectorFallbackThreshold),
-        vectorEnabled: process.env.AB_RECALL_VECTOR_ENABLED !== 'false'
-      }
-    };
-  }
 }
 
-function parsePositiveInteger(value: string | undefined, fallback: number): number {
-  const trimmed = value?.trim() || '';
-  const parsed = /^[0-9]+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-export const config = new Config(Config.fromEnv());
+export const config = new Config();
 export { Config as ConfigClass };

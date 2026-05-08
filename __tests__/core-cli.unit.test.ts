@@ -249,13 +249,10 @@ test('init expands tilde in --home paths', async () => {
   expect(existsSync(join(homeRoot, '.cogmem-test', 'config.toml'))).toBe(false);
 });
 
-test('doctor keeps legacy env validation available', async () => {
+test('doctor rejects legacy env-path configuration', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-doctor-legacy-'));
   const envPath = join(dir, '.agent-brain.env');
-  writeFileSync(envPath, [
-    `COGMEM_DB=${join(dir, 'brain.db')}`,
-    'COGMEM_VECTOR_BACKEND=sqlite-vec',
-  ].join('\n'));
+  writeFileSync(envPath, 'COGMEM_DB=brain.db\n');
 
   const proc = Bun.spawn({
     cmd: ['bun', doctorBin, '--env-path', envPath],
@@ -267,10 +264,9 @@ test('doctor keeps legacy env validation available', async () => {
   const errorOutput = await new Response(proc.stderr).text();
   const exitCode = await proc.exited;
 
-  expect(errorOutput).toBe('');
-  expect(exitCode).toBe(0);
-  expect(output).toContain('OK configuration parsed');
-  expect(output).toContain('OK kernel ready');
+  expect(output).toBe('');
+  expect(exitCode).toBe(1);
+  expect(errorOutput).toContain('--env-path is no longer supported');
 });
 
 test('doctor prints a high vector dimension warning for structured config', async () => {
@@ -299,7 +295,7 @@ test('doctor prints a high vector dimension warning for structured config', asyn
   expect(output).toContain('100,000 memories');
 });
 
-test('init keeps legacy env generation behind --legacy-env', async () => {
+test('init rejects legacy env generation flags', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-init-legacy-'));
   const envPath = join(dir, '.agent-brain.env');
 
@@ -327,10 +323,9 @@ test('init keeps legacy env generation behind --legacy-env', async () => {
   const errorOutput = await new Response(proc.stderr).text();
   const exitCode = await proc.exited;
 
-  expect(errorOutput).toBe('');
-  expect(exitCode).toBe(0);
-  expect(output).toContain('COGMEM_DB=./cogmem.db');
-  expect(output).toContain('COGMEM_VECTOR_BACKEND=sqlite-vec');
+  expect(output).not.toContain('COGMEM_DB=./cogmem.db');
+  expect(exitCode).toBe(1);
+  expect(errorOutput).toContain('--legacy-env and --env-path are no longer supported');
   expect(existsSync(envPath)).toBe(false);
 });
 

@@ -35,49 +35,14 @@ export interface SemanticBackendInvocation {
   reason: string;
 }
 
-const DEFAULT_CACHE_ROOT = resolve(process.env.AGENT_BRAIN_CACHE_DIR || `${process.env.HOME || '/tmp'}/.cache/agent-brain`);
+const DEFAULT_CACHE_ROOT = resolve(`${process.env.HOME || '/tmp'}/.cache/agent-brain`);
 const DEFAULT_READY_FILE = join(DEFAULT_CACHE_ROOT, 'semantic-backends', 'gemma4-e4b-ready.json');
 
 export function resolveSemanticBackendConfig(): SemanticBackendConfig {
-  const mode = ((process.env.AGENT_BRAIN_SEMANTIC_BACKEND_MODE || 'rule_only').trim() || 'rule_only') as SemanticBackendMode;
-  const modelPath = process.env.AGENT_BRAIN_GEMMA4_E4B_PATH
-    ? resolve(process.env.AGENT_BRAIN_GEMMA4_E4B_PATH)
-    : undefined;
-  const readinessFile = resolve(process.env.AGENT_BRAIN_SEMANTIC_BACKEND_READY_FILE || DEFAULT_READY_FILE);
-
-  if (mode === 'model_backed') {
-    return {
-      mode,
-      providerId: 'gemma4-e4b-local',
-      modelPath,
-      readinessFile,
-      requireReady: process.env.AGENT_BRAIN_SEMANTIC_BACKEND_REQUIRE_READY === 'true'
-    };
-  }
-
-  if (mode === 'hybrid') {
-    return {
-      mode,
-      providerId: 'hybrid-rule-plus-gemma4-e4b',
-      modelPath,
-      readinessFile,
-      requireReady: false
-    };
-  }
-
-  if (mode === 'deterministic_local') {
-    return {
-      mode,
-      providerId: 'deterministic-local',
-      readinessFile,
-      requireReady: false
-    };
-  }
-
   return {
     mode: 'rule_only',
     providerId: 'rule-only',
-    readinessFile,
+    readinessFile: DEFAULT_READY_FILE,
     requireReady: false
   };
 }

@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 
 import {
   ConversationMarkdownAdapter,
@@ -19,12 +18,9 @@ import {
 } from '../adapters/index.js';
 import { InstalledBatchProcessor } from '../batch/InstalledBatchProcessor.js';
 import { loadCogmemConfig, resolveCogmemConfigPath } from '../config/CogmemConfig.js';
-import { parseCoreEnvConfig } from '../config/CoreEnvConfig.js';
 import {
   createMemoryKernel,
   createMemoryKernelFromConfig,
-  createMemoryKernelFromEnv,
-  loadAgentBrainEnv,
   type MemoryKernel,
 } from '../factory.js';
 
@@ -106,7 +102,7 @@ export async function runOpenClawImport(argv: string[]): Promise<void> {
     workspaceRoot,
     projectId,
     sources,
-    usage: 'Usage: cogmem-import-openclaw [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>|--env-path <file>] [--date YYYY-MM-DD] [--session <file>...] [--memory <file>...] [--dry-run] [--json]',
+    usage: 'Usage: cogmem-import-openclaw [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--date YYYY-MM-DD] [--session <file>...] [--memory <file>...] [--dry-run] [--json]',
   });
 }
 
@@ -127,7 +123,7 @@ export async function runHermesImport(argv: string[]): Promise<void> {
     workspaceRoot,
     projectId,
     sources,
-    usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>|--env-path <file>] [--profile <file>] [--sessions <dir>] [--dry-run] [--json]',
+    usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--profile <file>] [--sessions <dir>] [--dry-run] [--json]',
   });
 }
 
@@ -142,6 +138,9 @@ async function runAgentImport(input: {
   if (input.args.values.help === true || input.args.values.h === true) {
     console.log(input.usage);
     return;
+  }
+  if (input.args.values['env-path'] !== undefined) {
+    throw new Error('--env-path is no longer supported. Use .cogmem/config.toml or pass --config <config.toml>.');
   }
   if (input.sources.length === 0) {
     throw new Error(`No ${input.agent} memory sources found in ${input.workspaceRoot}. ${input.usage}`);
@@ -310,29 +309,7 @@ function openKernel(args: ParsedArgs, workspaceRoot: string): { kernel: MemoryKe
     };
   }
 
-  const envPath = configResolution.kind === 'env' ? configResolution.path : resolveEnvPath(args, workspaceRoot);
-  if (!existsSync(envPath)) {
-    throw new Error(`Missing ${envPath}. Run cogmem-init first or pass --db <memory.db> / --config <config.toml>.`);
-  }
-  loadAgentBrainEnv(envPath);
-  const parsed = parseCoreEnvConfig(process.env);
-  const error = parsed.diagnostics.find((item) => item.severity === 'error');
-  if (error) throw new Error(`${error.code}: ${error.message}`);
-  if (!parsed.options.dbPath) {
-    throw new Error(`Missing COGMEM_DB in ${envPath}. Run cogmem-init again or pass --db <memory.db>.`);
-  }
-  return {
-    kernel: createMemoryKernelFromEnv({ envPath, autoLoadEnv: false }),
-    dbPath: parsed.options.dbPath,
-  };
-}
-
-function resolveEnvPath(args: ParsedArgs, workspaceRoot: string): string {
-  const explicit = stringArg(args, 'env-path');
-  if (explicit) return resolve(explicit);
-  const workspaceEnv = join(workspaceRoot, '.agent-brain.env');
-  if (existsSync(workspaceEnv)) return workspaceEnv;
-  return resolve('.agent-brain.env');
+  throw new Error(`Missing cogmem config at ${configResolution.path}. Run cogmem-init first or pass --db <memory.db> / --config <config.toml>.`);
 }
 
 function buildAdapterMap(): Map<SourceAdapterKind, SourceAdapter> {

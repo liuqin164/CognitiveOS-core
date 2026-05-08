@@ -30,7 +30,6 @@ export declare class RecallSufficiencyGate {
     private readonly config;
     private readonly compiler;
     constructor(config?: Partial<RecallSufficiencyGateConfig>);
-    static fromEnv(env?: Record<string, string | undefined>): RecallSufficiencyGate;
     evaluate(input: RecallSufficiencyInput): RecallSufficiencyDecision;
     private calculateTopConfidence;
     private detectTopicalDrift;

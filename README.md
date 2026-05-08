@@ -55,7 +55,7 @@ encryption = false
 
 Set `core.vector_dimension` to match the embedding model output. For example, `qwen3-embedding:8b` uses 4096 dimensions. High dimensions are supported, but `cogmem-doctor` warns at 2048+ dimensions because 4096-dimensional Float32 vectors use about 1.53 GiB for 100,000 memories before SQLite/index overhead.
 
-Legacy `.agent-brain.env` files remain supported through `createMemoryKernelFromEnv()` and `--env-path`, but new installs should use `config.toml`.
+TOML is the only configuration entrypoint. Environment variables are not read as global kernel configuration; they are only interpolated when explicitly referenced inside `config.toml`, for example `api_key = "${ANTHROPIC_API_KEY}"`.
 
 ## SDK Quickstart
 
@@ -174,7 +174,7 @@ See `examples/hermes-backend`.
 
 ```bash
 cogmem-init              # interactive setup
-cogmem-doctor            # validates config.toml or legacy env and opens the kernel
+cogmem-doctor            # validates config.toml and opens the kernel
 cogmem-import-openclaw   # migrate OpenClaw workspace memory into core
 cogmem-import-hermes     # migrate Hermes profile/session memory into core
 cogmem-snapshot          # export/import snapshot helper
@@ -186,7 +186,7 @@ cogmem-migrate-vectors   # vector backend migration helper; uses config vector_d
 
 The package entrypoint exports explicit stable and beta symbols only. Internal implementation stores and compilers are not exported from `@CognitiveOS/core`.
 
-Stable integration APIs include `MemoryKernel`, `createMemoryKernelFromConfig()`, `createMemoryKernelFromEnv()`, `KernelAgentMemoryBackend`, `OpenClawWorkspaceProfile`, and `HermesWorkspaceProfile`. Advanced recall orchestration symbols such as `UniverseNavigator`, `PulseRetrievalEngine`, `TemporalBranchSearch`, and `NarrativeRecallAssembler` are exported as beta APIs for agents that need direct inspection or custom routing.
+Stable integration APIs include `MemoryKernel`, `createMemoryKernelFromConfig()`, `KernelAgentMemoryBackend`, `OpenClawWorkspaceProfile`, and `HermesWorkspaceProfile`. Advanced recall orchestration symbols such as `UniverseNavigator`, `PulseRetrievalEngine`, `TemporalBranchSearch`, and `NarrativeRecallAssembler` are exported as beta APIs for agents that need direct inspection or custom routing.
 
 ## Development
 

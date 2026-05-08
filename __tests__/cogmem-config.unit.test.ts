@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  applyCogmemConfigToEnv,
   loadCogmemConfig,
   resolveCogmemConfigPath,
 } from '../src/config/CogmemConfig.js';
@@ -55,12 +54,12 @@ test('loadCogmemConfig parses TOML and resolves paths relative to the config fil
   expect(loaded.options.vectorBackend).toBe('sqlite-vec');
   expect(loaded.options.redactionPolicy).toEqual({ email: true, phone: false, ssn: true });
   expect(loaded.paths.snapshotsDir).toBe(join(root, '.cogmem', 'snapshots'));
-  expect(loaded.env.AGENT_BRAIN_MODEL_MEMORY_API_KEY).toBe('test-secret');
+  expect(loaded.modelRegistry.getRoleConfig('memory').apiKey).toBe('test-secret');
   expect(loaded.integrations.openclaw.enabled).toBe(true);
   expect(loaded.diagnostics).toEqual([]);
 });
 
-test('loadCogmemConfig maps vector_dimension to kernel options and env', () => {
+test('loadCogmemConfig maps vector_dimension to kernel options only', () => {
   const root = mkdtempSync(join(tmpdir(), 'cogmem-vector-dimension-'));
   const configPath = join(root, '.cogmem', 'config.toml');
   mkdirSync(join(root, '.cogmem'), { recursive: true });
@@ -74,7 +73,6 @@ test('loadCogmemConfig maps vector_dimension to kernel options and env', () => {
   const loaded = loadCogmemConfig({ configPath, env: {} });
 
   expect(loaded.options.vectorDimension).toBe(4096);
-  expect(loaded.env.AB_VECTOR_DIMENSION).toBe('4096');
   expect(loaded.diagnostics).toContainEqual(expect.objectContaining({
     severity: 'warning',
     code: 'high_vector_dimension',
@@ -117,7 +115,7 @@ test('loadCogmemConfig rejects partially numeric vector dimensions', () => {
   }));
 });
 
-test('resolveCogmemConfigPath prefers project .cogmem over global home and falls back to legacy env', () => {
+test('resolveCogmemConfigPath prefers TOML configs and ignores legacy env files', () => {
   const root = mkdtempSync(join(tmpdir(), 'cogmem-discovery-'));
   const nested = join(root, 'packages', 'demo');
   const home = join(root, 'home');
@@ -138,13 +136,13 @@ test('resolveCogmemConfigPath prefers project .cogmem over global home and falls
   });
 
   expect(resolveCogmemConfigPath({ cwd: root, env: { HOME: join(root, 'empty-home') } })).toEqual({
-    kind: 'env',
-    path: join(root, '.agent-brain.env'),
+    kind: 'missing',
+    path: join(root, 'empty-home', '.cogmem', 'config.toml'),
   });
 });
 
-test('applyCogmemConfigToEnv maps structured config to existing model env variables', () => {
-  const root = mkdtempSync(join(tmpdir(), 'cogmem-env-map-'));
+test('loadCogmemConfig builds model registry directly from TOML', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cogmem-model-registry-'));
   const configPath = join(root, 'config.toml');
   writeFileSync(configPath, [
     '[core]',
@@ -154,24 +152,62 @@ test('applyCogmemConfigToEnv maps structured config to existing model env variab
     'provider = "openai_compatible"',
     'base_url = "http://localhost:11434/v1"',
     'model = "nomic-embed-text"',
+    'api_key = "${EMBEDDING_KEY}"',
     '',
     '[memory_model]',
-    'provider = "rule_only"',
-    'model = "rule_only"',
+    'provider = "openai_compatible"',
+    'base_url = "http://localhost:11434/v1"',
+    'model = "qwen2.5:3b"',
+    'api_key = "${MEMORY_KEY}"',
   ].join('\n'));
-  const targetEnv: Record<string, string | undefined> = {};
-  const loaded = loadCogmemConfig({ configPath, env: {} });
+  const loaded = loadCogmemConfig({
+    configPath,
+    env: { EMBEDDING_KEY: 'embedding-secret', MEMORY_KEY: 'memory-secret' },
+  });
 
-  applyCogmemConfigToEnv(loaded, targetEnv);
-
-  expect(targetEnv.COGMEM_DB).toBe(join(root, 'memory.db'));
-  expect(targetEnv.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER).toBe('openai_compatible');
-  expect(targetEnv.AGENT_BRAIN_MODEL_EMBEDDING_NAME).toBe('nomic-embed-text');
-  expect(targetEnv.AGENT_BRAIN_MODEL_MEMORY_PROVIDER).toBe('rule_only');
+  expect(loaded.modelRegistry.getRoleConfig('embedding')).toMatchObject({
+    provider: 'openai_compatible',
+    modelName: 'nomic-embed-text',
+    apiKey: 'embedding-secret',
+  });
+  expect(loaded.modelRegistry.getRoleConfig('memory')).toMatchObject({
+    provider: 'openai_compatible',
+    modelName: 'qwen2.5:3b',
+    apiKey: 'memory-secret',
+  });
 });
 
-test('applyCogmemConfigToEnv clears stale optional model env variables', () => {
-  const root = mkdtempSync(join(tmpdir(), 'cogmem-env-clear-'));
+test('createMemoryKernelFromConfig ignores stale process env without mutating it', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cogmem-kernel-default-env-'));
+  const configPath = join(root, '.cogmem', 'config.toml');
+  mkdirSync(join(root, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\n');
+
+  const previousProvider = process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER;
+  const previousMemoryProvider = process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER;
+  process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER = 'openai_compatible';
+  process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER = 'anthropic';
+
+  const kernel = createMemoryKernelFromConfig({ configPath });
+  try {
+    const neuron = await kernel.ingest({
+      projectId: 'toml-only',
+      content: 'TOML configuration must not read stale process env model settings.',
+    });
+    expect(neuron.coordinates.V).toHaveLength(384);
+    expect(process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER).toBe('openai_compatible');
+    expect(process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER).toBe('anthropic');
+  } finally {
+    kernel.close();
+    if (previousProvider === undefined) delete process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER;
+    else process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER = previousProvider;
+    if (previousMemoryProvider === undefined) delete process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER;
+    else process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER = previousMemoryProvider;
+  }
+});
+
+test('loadCogmemConfig does not expose env projection output', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cogmem-no-env-projection-'));
   const configPath = join(root, 'config.toml');
   writeFileSync(configPath, [
     '[core]',
@@ -185,17 +221,9 @@ test('applyCogmemConfigToEnv clears stale optional model env variables', () => {
     'provider = "rule_only"',
     'model = "rule_only"',
   ].join('\n'));
-  const targetEnv: Record<string, string | undefined> = {
-    AGENT_BRAIN_MODEL_EMBEDDING_BASE_URL: 'https://stale.example/v1',
-    AGENT_BRAIN_MODEL_EMBEDDING_API_KEY: 'stale-key',
-    AGENT_BRAIN_MODEL_MEMORY_API_KEY: 'stale-memory-key',
-  };
+  const loaded = loadCogmemConfig({ configPath, env: {} });
 
-  applyCogmemConfigToEnv(loadCogmemConfig({ configPath, env: {} }), targetEnv);
-
-  expect(targetEnv.AGENT_BRAIN_MODEL_EMBEDDING_BASE_URL).toBe('http://localhost:11434/v1');
-  expect(targetEnv.AGENT_BRAIN_MODEL_EMBEDDING_API_KEY).toBe('');
-  expect(targetEnv.AGENT_BRAIN_MODEL_MEMORY_API_KEY).toBe('');
+  expect('env' in loaded).toBe(false);
 });
 
 test('loadCogmemConfig reports invalid model providers', () => {
@@ -250,27 +278,4 @@ test('createMemoryKernelFromConfig applies vector_dimension to the active vector
 
   expect(kernel.vectorStore.getStats().dimension).toBe(4096);
   kernel.close();
-});
-
-test('createMemoryKernelFromConfig applies safe model defaults over stale process env', () => {
-  const root = mkdtempSync(join(tmpdir(), 'cogmem-kernel-default-env-'));
-  const configPath = join(root, '.cogmem', 'config.toml');
-  mkdirSync(join(root, '.cogmem'), { recursive: true });
-  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\n');
-
-  const previousProvider = process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER;
-  const previousMemoryProvider = process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER;
-  process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER = 'openai_compatible';
-  process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER = 'anthropic';
-
-  const kernel = createMemoryKernelFromConfig({ configPath });
-
-  expect(process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER).toBe('deterministic_local');
-  expect(process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER).toBe('rule_only');
-
-  kernel.close();
-  if (previousProvider === undefined) delete process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER;
-  else process.env.AGENT_BRAIN_MODEL_EMBEDDING_PROVIDER = previousProvider;
-  if (previousMemoryProvider === undefined) delete process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER;
-  else process.env.AGENT_BRAIN_MODEL_MEMORY_PROVIDER = previousMemoryProvider;
 });
