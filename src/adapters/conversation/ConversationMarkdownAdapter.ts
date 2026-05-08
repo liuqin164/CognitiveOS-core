@@ -1,0 +1,188 @@
+import type {
+  AdaptedSource,
+  AdapterWindow,
+  SourceAdapter,
+  SourceAdapterDiagnostic,
+  SourceAdapterRecord,
+  SourceDefinition,
+  SourceFileSnapshot,
+  SourceActorRole
+} from '../types.js';
+import {
+  computeStableHash,
+  inferSourceTitle,
+  normalizeMarkdownText,
+  parseLooseDateHeading,
+  parseMarkdownRoleLine,
+  resolveTimestampWithContext
+} from '../types.js';
+
+interface ParsedMessage {
+  role: SourceActorRole;
+  text: string;
+  timestamp: number;
+  lineNumber: number;
+}
+
+export class ConversationMarkdownAdapter implements SourceAdapter {
+  readonly kind = 'conversation_markdown' as const;
+  private readonly adapterVersion = 'conversation-markdown-v2';
+
+  adapt(source: SourceDefinition, snapshot: SourceFileSnapshot, window?: AdapterWindow): AdaptedSource {
+    const normalized = normalizeMarkdownText(snapshot.content);
+    const lines = normalized.split('\n');
+    const diagnostics: SourceAdapterDiagnostic[] = [];
+    const messages = this.parseMessages(lines, snapshot.fileMtimeMs, source.sourcePath, diagnostics);
+    const filteredMessages = messages.filter((message) =>
+      !window || (message.timestamp >= window.start && message.timestamp < window.end)
+    );
+    const records = this.buildRecords(source, snapshot, filteredMessages);
+
+    return {
+      source,
+      snapshot: {
+        sourceId: snapshot.sourceId,
+        adapterKind: snapshot.adapterKind,
+        sourcePath: snapshot.sourcePath,
+        projectId: snapshot.projectId,
+        fileHash: snapshot.fileHash,
+        fileMtimeMs: snapshot.fileMtimeMs,
+        fileSize: snapshot.fileSize,
+        readAt: snapshot.readAt
+      },
+      records,
+      diagnostics
+    };
+  }
+
+  private parseMessages(
+    lines: string[],
+    fallbackTime: number,
+    sourcePath: string,
+    diagnostics: SourceAdapterDiagnostic[]
+  ): ParsedMessage[] {
+    const messages: ParsedMessage[] = [];
+    let current: ParsedMessage | null = null;
+    let currentDateHint: string | undefined;
+    let ignoredPrelude = 0;
+
+    const flush = (): void => {
+      if (!current) return;
+      const text = current.text.trim();
+      if (text) messages.push({ ...current, text });
+      current = null;
+    };
+
+    lines.forEach((line, index) => {
+      if (/^<!--\s*agent-brain-[a-z0-9_-]+:/i.test(line.trim()) || /^<!--\s*agent-brain-normalized\s*:/i.test(line.trim())) {
+        return;
+      }
+
+      const dateHeading = parseLooseDateHeading(line);
+      if (dateHeading) {
+        currentDateHint = dateHeading;
+        return;
+      }
+
+      const parsed = parseMarkdownRoleLine(line);
+      if (parsed) {
+        flush();
+        current = {
+          role: parsed.role,
+          text: parsed.text,
+          timestamp: resolveTimestampWithContext(parsed.timestamp, fallbackTime + index, currentDateHint),
+          lineNumber: index + 1
+        };
+        return;
+      }
+
+      if (!current) {
+        if (line.trim()) ignoredPrelude += 1;
+        return;
+      }
+      current.text += `${current.text ? '\n' : ''}${line.trimEnd()}`;
+    });
+
+    flush();
+
+    if (messages.length === 0 && lines.some((line) => line.trim())) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'conversation_contract_mismatch',
+        message: 'No parseable conversation messages were found.',
+        filePath: sourcePath,
+        adapterKind: this.kind,
+        contractHint: 'Expected role-prefixed transcript lines such as "user:", "Human:", "Q:", "AI:", or "assistant:".',
+        fallbackHint: 'Use repeated --conversation only for transcript-style files, or minimally normalize the markdown into role-prefixed lines before ingestion.'
+      });
+    } else if (ignoredPrelude > 0) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'conversation_partial_prelude_ignored',
+        message: `Ignored ${ignoredPrelude} non-message line(s) before the first parseable transcript turn.`,
+        filePath: sourcePath,
+        adapterKind: this.kind,
+        contractHint: 'Intro headings and date headers are tolerated, but only role-prefixed transcript lines become episodic records.',
+        fallbackHint: 'If important turns live outside the transcript shape, move them into explicit role-prefixed lines or ingest the file through --soul instead.'
+      });
+    }
+
+    return messages;
+  }
+
+  private buildRecords(
+    source: SourceDefinition,
+    snapshot: SourceFileSnapshot,
+    messages: ParsedMessage[]
+  ): SourceAdapterRecord[] {
+    const sourceTitle = inferSourceTitle(source.sourcePath);
+    const records: SourceAdapterRecord[] = [];
+    let turnCursor = 0;
+    let openTurnId: string | undefined;
+    let lastRole: SourceActorRole | undefined;
+
+    for (const message of messages) {
+      if (!openTurnId || message.role === 'user' || (lastRole === 'agent' && message.role !== 'agent')) {
+        turnCursor += 1;
+        openTurnId = computeStableHash([source.sourceId, snapshot.fileHash, 'turn', turnCursor]);
+      }
+
+      const recordHash = computeStableHash([
+        source.sourceId,
+        message.role,
+        message.timestamp,
+        message.text
+      ]);
+
+      records.push({
+        recordId: `srcmsg-${recordHash.slice(0, 16)}`,
+        turnId: openTurnId,
+        kind: 'conversation_message',
+        role: message.role,
+        text: message.text,
+        timestamp: message.timestamp,
+        tags: [sourceTitle, 'conversation'],
+        confidenceHint: 0.92,
+        sourceTypeHint: message.role === 'agent' ? 'llm_inference' : 'user_input',
+        metadata: {
+          lineNumber: message.lineNumber,
+          turnIndex: turnCursor
+        },
+        provenance: {
+          sourceId: source.sourceId,
+          sourcePath: source.sourcePath,
+          sourceType: this.kind,
+          adapterVersion: this.adapterVersion,
+          fileHash: snapshot.fileHash,
+          fileMtimeMs: snapshot.fileMtimeMs,
+          recordHash,
+          reliabilityClass: 'raw_utterance'
+        }
+      });
+
+      lastRole = message.role;
+    }
+
+    return records;
+  }
+}

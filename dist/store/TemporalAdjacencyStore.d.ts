@@ -1,0 +1,49 @@
+import type { TimeBucketRecord } from '../types/index.js';
+export interface TemporalSurfaceSegment {
+    bucketId: string;
+    label: string;
+    bucketStart: number;
+    bucketEnd: number;
+    neuronIds: string[];
+    source: 'seed' | 'window' | 'adjacent' | 'nearest' | 'band';
+}
+export declare class TemporalAdjacencyStore {
+    private db;
+    constructor(dbPath?: string);
+    private initializeSchema;
+    syncBuckets(buckets: TimeBucketRecord[], createdAt: number): void;
+    collectAdjacentNeuronIds(bucketIds: string[], limit?: number): string[];
+    collectContinuousTraversal(input: {
+        bucketIds: string[];
+        hopLimit?: number;
+        limit?: number;
+    }): {
+        bucketIds: string[];
+        labels: string[];
+        neuronIds: string[];
+    };
+    collectContinuousSurface(input: {
+        bucketIds?: string[];
+        startTime?: number;
+        endTime?: number;
+        preferredBucketType?: TimeBucketRecord['bucketType'];
+        hopLimit?: number;
+        limit?: number;
+    }): {
+        bucketType: TimeBucketRecord['bucketType'];
+        segments: TemporalSurfaceSegment[];
+        bucketIds: string[];
+        labels: string[];
+        neuronIds: string[];
+    };
+    close(): void;
+    private getAdjacentBucketIds;
+    private listWindowSegments;
+    private listNearestSegments;
+    private listBucketSegments;
+    private listNeuronIdsForBucket;
+    private expandContinuousBand;
+    private getBucketStepMs;
+    private normalizeBucketStart;
+}
+//# sourceMappingURL=TemporalAdjacencyStore.d.ts.map

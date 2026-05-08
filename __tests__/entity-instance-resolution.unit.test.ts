@@ -1,0 +1,205 @@
+// @ts-nocheck
+import { describe, expect, it } from 'bun:test';
+import {
+  EntityInstanceDecisionSignal,
+  PendingEntityFallbackStrategy,
+  STRONG_NEW_SIGNAL_PHRASES,
+  STRONG_UPDATE_SIGNAL_PHRASES,
+  decideEntityInstanceResolution
+} from '../src/engine/EntityResolutionEngine.js';
+import { EntityStore } from '../src/store/EntityStore.js';
+import { entityReferenceSamplesZh } from './fixtures/entityReferenceSamples.zh.js';
+import { entityReferenceSamplesEn } from './fixtures/entityReferenceSamples.en.js';
+
+describe('Entity instance resolution unit', () => {
+  const bilingualCases = [
+    {
+      label: 'zh',
+      samples: entityReferenceSamplesZh,
+      entities: {
+        firstName: '旧耳机',
+        secondName: '新耳机',
+        firstAliases: [entityReferenceSamplesZh.aliases.previous],
+        secondAliases: [entityReferenceSamplesZh.aliases.latest, entityReferenceSamplesZh.aliases.genericLatest]
+      }
+    },
+    {
+      label: 'en',
+      samples: entityReferenceSamplesEn,
+      entities: {
+        firstName: 'old-headset',
+        secondName: 'new-headset',
+        firstAliases: [entityReferenceSamplesEn.aliases.previous],
+        secondAliases: [entityReferenceSamplesEn.aliases.latest, entityReferenceSamplesEn.aliases.genericLatest]
+      }
+    }
+  ] as const;
+
+  for (const testCase of bilingualCases) {
+    it(`codes strong new-instance signals as explicit constants for ${testCase.label}`, () => {
+      expect(STRONG_NEW_SIGNAL_PHRASES.some((phrase) => testCase.samples.strongNewSignal.toLowerCase().includes(phrase.toLowerCase()))).toBe(true);
+
+      const decision = decideEntityInstanceResolution(testCase.samples.strongNewSignal);
+
+      expect(decision.signal).toBe(EntityInstanceDecisionSignal.STRONG_NEW_SIGNAL);
+      expect(decision.fallback).toBe(PendingEntityFallbackStrategy.ASSUME_NEW);
+      expect(decision.shouldCreatePending).toBe(false);
+    });
+
+    it(`codes strong update signals as explicit constants and resolves prior/latest instances independently for ${testCase.label}`, () => {
+      const store = new EntityStore(':memory:');
+      const first = store.upsertEntity({
+        canonicalName: testCase.entities.firstName,
+        type: 'device',
+        aliases: testCase.entities.firstAliases,
+        metadata: { projectId: `entity-unit-${testCase.label}` },
+        instanceMode: 'new_instance',
+        createdAt: 1
+      });
+      const second = store.upsertEntity({
+        canonicalName: testCase.entities.secondName,
+        type: 'device',
+        aliases: testCase.entities.secondAliases,
+        metadata: { projectId: `entity-unit-${testCase.label}` },
+        instanceMode: 'new_instance',
+        createdAt: 2
+      });
+      store.recordMention({ entityId: first.entityId, projectId: `entity-unit-${testCase.label}`, mentionType: 'declared', createdAt: 1 });
+      store.recordMention({ entityId: second.entityId, projectId: `entity-unit-${testCase.label}`, mentionType: 'declared', createdAt: 2 });
+
+      const decision = decideEntityInstanceResolution(testCase.samples.strongUpdateSignal);
+
+      expect(STRONG_UPDATE_SIGNAL_PHRASES.some((phrase) => testCase.samples.strongUpdateSignal.toLowerCase().includes(phrase.toLowerCase()))).toBe(true);
+      expect(decision.signal).toBe(EntityInstanceDecisionSignal.STRONG_UPDATE_SIGNAL);
+      expect(decision.fallback).toBe(PendingEntityFallbackStrategy.ASSUME_LATEST);
+      expect(store.resolveReference(testCase.samples.aliases.previous, 'device', { projectId: `entity-unit-${testCase.label}` })?.entityId).toBe(first.entityId);
+      expect(store.resolveReference(testCase.samples.aliases.latest, 'device', { projectId: `entity-unit-${testCase.label}` })?.entityId).toBe(second.entityId);
+
+      store.close();
+    });
+  }
+
+  it('routes ambiguous mentions into pending with an explicit STAY_PENDING fallback', () => {
+    const store = new EntityStore(':memory:');
+    const decision = decideEntityInstanceResolution(entityReferenceSamplesZh.ambiguousReference);
+    const pending = store.registerPendingResolution({
+      referenceText: entityReferenceSamplesZh.ambiguousReference,
+      entityType: 'device',
+      contextNeuronId: 'n-1',
+      createdAt: 10
+    });
+
+    expect(decision.signal).toBe(EntityInstanceDecisionSignal.AMBIGUOUS);
+    expect(decision.fallback).toBe(PendingEntityFallbackStrategy.STAY_PENDING);
+    expect(decision.shouldCreatePending).toBe(true);
+    expect(pending.status).toBe('pending');
+    expect(pending.referenceText).toBe(entityReferenceSamplesZh.ambiguousReference);
+
+    store.close();
+  });
+
+  for (const testCase of [
+    { label: 'zh', samples: entityReferenceSamplesZh },
+    { label: 'en', samples: entityReferenceSamplesEn }
+  ] as const) {
+    it(`handles self-corrections by promoting the corrected strong signal for ${testCase.label}`, () => {
+      const decision = decideEntityInstanceResolution(testCase.samples.selfCorrection);
+
+      expect(decision.signal).toBe(EntityInstanceDecisionSignal.STRONG_NEW_SIGNAL);
+      expect(decision.fallback).toBe(PendingEntityFallbackStrategy.ASSUME_NEW);
+      expect(decision.matchedSignal).toBeTruthy();
+    });
+
+    it(`keeps multiple same-type instances coexisting without relying on fixture order for ${testCase.label}`, () => {
+      const store = new EntityStore(':memory:');
+      const alpha = store.upsertEntity({
+        canonicalName: `device-a-${testCase.label}`,
+        type: 'device',
+        aliases: [testCase.samples.aliases.genericLatest],
+        metadata: { projectId: `entity-multi-${testCase.label}` },
+        instanceMode: 'new_instance',
+        createdAt: 100
+      });
+      const beta = store.upsertEntity({
+        canonicalName: `device-b-${testCase.label}`,
+        type: 'device',
+        aliases: [testCase.samples.aliases.genericLatest, testCase.samples.aliases.latest],
+        metadata: { projectId: `entity-multi-${testCase.label}` },
+        instanceMode: 'new_instance',
+        createdAt: 200
+      });
+      store.recordMention({ entityId: alpha.entityId, projectId: `entity-multi-${testCase.label}`, mentionType: 'declared', createdAt: 100 });
+      store.recordMention({ entityId: beta.entityId, projectId: `entity-multi-${testCase.label}`, mentionType: 'declared', createdAt: 200 });
+
+      const latest = store.resolveReference(testCase.samples.aliases.genericLatest, 'device', { projectId: `entity-multi-${testCase.label}` });
+      const previous = store.resolveReference(testCase.samples.aliases.previous, 'device', { projectId: `entity-multi-${testCase.label}` });
+
+      expect(latest?.entityId).toBe(beta.entityId);
+      expect(previous?.entityId).toBe(alpha.entityId);
+      expect(latest?.entityId).not.toBe(previous?.entityId);
+
+      store.close();
+    });
+  }
+
+  it('keeps same-name instances separated within the same project and preserves previous/latest references in zh and en aliases', () => {
+    const store = new EntityStore(':memory:');
+    const first = store.upsertEntity({
+      canonicalName: 'monitor',
+      type: 'device',
+      aliases: [entityReferenceSamplesZh.aliases.displayPrevious, entityReferenceSamplesEn.aliases.displayPrevious, entityReferenceSamplesZh.aliases.displayGeneric],
+      metadata: { projectId: 'entity-project-local' },
+      instanceMode: 'new_instance',
+      createdAt: 10
+    });
+    const second = store.upsertEntity({
+      canonicalName: 'monitor',
+      type: 'device',
+      aliases: [entityReferenceSamplesZh.aliases.displayLatest, entityReferenceSamplesEn.aliases.displayLatest, entityReferenceSamplesEn.aliases.displayGeneric],
+      metadata: { projectId: 'entity-project-local' },
+      instanceMode: 'new_instance',
+      createdAt: 20
+    });
+    store.recordMention({ entityId: first.entityId, projectId: 'entity-project-local', mentionType: 'declared', createdAt: 10 });
+    store.recordMention({ entityId: second.entityId, projectId: 'entity-project-local', mentionType: 'declared', createdAt: 20 });
+
+    expect(store.resolveReference(entityReferenceSamplesZh.aliases.displayPrevious, 'device', { projectId: 'entity-project-local' })?.entityId).toBe(first.entityId);
+    expect(store.resolveReference(entityReferenceSamplesEn.aliases.displayPrevious, 'device', { projectId: 'entity-project-local' })?.entityId).toBe(first.entityId);
+    expect(store.resolveReference(entityReferenceSamplesZh.aliases.displayLatest, 'device', { projectId: 'entity-project-local' })?.entityId).toBe(second.entityId);
+    expect(store.resolveReference(entityReferenceSamplesEn.aliases.displayLatest, 'device', { projectId: 'entity-project-local' })?.entityId).toBe(second.entityId);
+    expect(store.resolveReference(entityReferenceSamplesEn.aliases.displayGeneric, 'device', { projectId: 'entity-project-local' })?.entityId).toBe(second.entityId);
+
+    store.close();
+  });
+
+  it('hardens project alias evolution and project-scoped previous/latest references without collapsing same-name projects', () => {
+    const store = new EntityStore(':memory:');
+    const previous = store.upsertEntity({
+      canonicalName: 'Atlas project',
+      type: 'project',
+      aliases: ['前一个项目', 'the previous project', 'atlas-legacy'],
+      metadata: { projectId: 'project-alias-v3' },
+      instanceMode: 'new_instance',
+      createdAt: 10
+    });
+    const latest = store.upsertEntity({
+      canonicalName: 'Atlas project',
+      type: 'project',
+      aliases: ['这个项目', '新项目', 'this project', 'the new project', 'atlas-billing'],
+      metadata: { projectId: 'project-alias-v3' },
+      instanceMode: 'new_instance',
+      createdAt: 20
+    });
+    store.recordMention({ entityId: previous.entityId, projectId: 'project-alias-v3', mentionType: 'declared', createdAt: 10 });
+    store.recordMention({ entityId: latest.entityId, projectId: 'project-alias-v3', mentionType: 'declared', createdAt: 20 });
+
+    expect(store.resolveReference('前一个项目', 'project', { projectId: 'project-alias-v3' })?.entityId).toBe(previous.entityId);
+    expect(store.resolveReference('the previous project', 'project', { projectId: 'project-alias-v3' })?.entityId).toBe(previous.entityId);
+    expect(store.resolveReference('这个项目', 'project', { projectId: 'project-alias-v3' })?.entityId).toBe(latest.entityId);
+    expect(store.resolveReference('the new project', 'project', { projectId: 'project-alias-v3' })?.entityId).toBe(latest.entityId);
+    expect(store.resolveReference('this project', 'project', { projectId: 'project-alias-v3' })?.entityId).toBe(latest.entityId);
+    expect(store.listDisambiguationCandidates('Atlas project', 'project').length).toBeGreaterThanOrEqual(2);
+
+    store.close();
+  });
+});

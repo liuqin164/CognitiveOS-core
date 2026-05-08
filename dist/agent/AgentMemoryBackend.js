@@ -1,0 +1,75 @@
+export class KernelAgentMemoryBackend {
+    kernel;
+    constructor(kernel) {
+        this.kernel = kernel;
+    }
+    async rememberTurn(turn) {
+        const content = [
+            `User: ${turn.userText}`,
+            turn.assistantText ? `Agent: ${turn.assistantText}` : '',
+        ].filter(Boolean).join('\n');
+        await this.kernel.ingest({
+            content,
+            projectId: turn.projectId,
+            createdAt: turn.timestamp,
+            source: `${turn.agentId}:${turn.sessionId}`,
+            tags: [
+                `agent:${turn.agentId}`,
+                `session:${turn.sessionId}`,
+            ],
+        });
+    }
+    recall(query) {
+        const limit = query.limit ?? 5;
+        const retrievalLimit = Math.max(limit * 4, 24);
+        const result = this.kernel.navigateMemory(query.query, {
+            projectId: query.projectId,
+            limit: retrievalLimit,
+            startTime: query.startTime,
+            endTime: query.endTime,
+        });
+        const scopedEvidence = this.filterAgentEvidence(result.rawEvidence, query.agentId).slice(0, limit);
+        if (scopedEvidence.length > 0) {
+            return {
+                recallMode: result.recallMode,
+                items: scopedEvidence.map((neuron) => this.toAgentRecallItem(neuron)),
+                narrative: result.navigation?.narrative,
+                pulseTrace: result.navigation?.pulse.trace,
+                temporalTraversal: result.navigation?.branchSearch.temporalTraversal,
+                runtime: result.navigation?.runtime,
+                fallbackUsed: result.fallbackUsed,
+            };
+        }
+        const fallback = this.kernel.recall(query.query, {
+            projectId: query.projectId,
+            limit: retrievalLimit,
+        });
+        return {
+            recallMode: 'brain_recall_fallback',
+            items: this.filterAgentEvidence(fallback.rawEvidence, query.agentId)
+                .slice(0, limit)
+                .map((neuron) => this.toAgentRecallItem(neuron)),
+            narrative: result.navigation?.narrative,
+            pulseTrace: result.navigation?.pulse.trace,
+            temporalTraversal: result.navigation?.branchSearch.temporalTraversal,
+            runtime: result.navigation?.runtime,
+            fallbackUsed: true,
+        };
+    }
+    filterAgentEvidence(neurons, agentId) {
+        return neurons.filter((neuron) => {
+            const tags = neuron.metadata.tags || [];
+            return tags.includes(`agent:${agentId}`) || tags.includes(agentId);
+        });
+    }
+    toAgentRecallItem(neuron) {
+        return {
+            id: neuron.id,
+            text: neuron.content,
+            projectId: neuron.metadata.projectId,
+            topicPath: neuron.metadata.topicPath,
+            tags: neuron.metadata.tags || [],
+            source: neuron.metadata.filePath,
+        };
+    }
+}

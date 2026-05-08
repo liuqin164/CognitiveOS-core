@@ -1,0 +1,14 @@
+# Changelog
+
+## 2.0.0-rc.1
+
+- Split the memory kernel into an independently publishable core package.
+- Added a stable Cogmem home directory with TOML configuration at `~/.cogmem/config.toml`.
+- Added `cogmem-init` and `cogmem-doctor` for first-run setup and validation.
+- Added `cogmem-import-openclaw` and `cogmem-import-hermes` for command-triggered migration from existing agent workspaces.
+- Added `KernelAgentMemoryBackend` for external agent integrations.
+- Routed `KernelAgentMemoryBackend.recall()` through universe navigation by default, with BrainRecall retained as fallback.
+- Exported the pulse/universe retrieval orchestrators for advanced agent integrations.
+- Added core-native OpenClaw and Hermes workspace profiles.
+- Added agent-facing OpenClaw and Hermes runbooks under `examples/*-backend/AGENTS.md`.
+- Added snapshot, vector backend, governance, PII redaction, and encryption release hardening.

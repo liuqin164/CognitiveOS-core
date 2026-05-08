@@ -1,0 +1,17 @@
+export const ZH_ENTITY_HINTS = [
+  '支付宝',
+  '微信支付',
+  'SQLite',
+  'Postgres',
+  'Kubernetes',
+  'MemoryKernel',
+  'CognitiveOS',
+  'Qwen',
+  'Ollama',
+  'LongMemEval',
+  'LangGraph',
+  'CRM',
+  'PRD',
+  'OKR',
+  'LLM',
+];

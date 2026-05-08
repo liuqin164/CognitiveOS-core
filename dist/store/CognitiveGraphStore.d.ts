@@ -1,0 +1,42 @@
+import type { CognitiveEdgeRecord, CognitiveEdgeType, CognitiveNodeRecord, CognitiveNodeType } from '../types/index.js';
+export declare class CognitiveGraphStore {
+    private db;
+    constructor(dbPath?: string);
+    private initializeSchema;
+    upsertNode(input: {
+        nodeId: string;
+        nodeType: CognitiveNodeType;
+        nodeKey: string;
+        title: string;
+        projectId?: string;
+        sourceNeuronId?: string;
+        metadata?: Record<string, unknown>;
+        createdAt: number;
+    }): CognitiveNodeRecord;
+    linkNodes(input: {
+        sourceNodeId: string;
+        targetNodeId: string;
+        edgeType: CognitiveEdgeType;
+        weight?: number;
+        projectId?: string;
+        metadata?: Record<string, unknown>;
+        createdAt: number;
+    }): CognitiveEdgeRecord;
+    collectContext(input: {
+        projectId?: string;
+        terms?: string[];
+        seedNodeKeys?: string[];
+        seedNodeIds?: string[];
+        limit?: number;
+        hopLimit?: number;
+    }): {
+        seedNodeIds: string[];
+        traversedNodeIds: string[];
+        neuronIds: string[];
+        edgeCount: number;
+    };
+    getNodeCount(): number;
+    getEdgeCount(): number;
+    close(): void;
+}
+//# sourceMappingURL=CognitiveGraphStore.d.ts.map

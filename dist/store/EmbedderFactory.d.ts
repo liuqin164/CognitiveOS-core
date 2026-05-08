@@ -1,0 +1,11 @@
+import { Embedder } from './Embedder.js';
+export type EmbeddingBackendId = 'deterministic_local' | 'transformers_remote' | 'openai_compatible';
+export interface EmbeddingBackendInfo {
+    backendId: EmbeddingBackendId;
+    requiresModelSetup: boolean;
+    mayDownloadModels: boolean;
+}
+export declare function resolveEmbeddingBackendId(): EmbeddingBackendId;
+export declare function getEmbeddingBackendInfo(backendId?: EmbeddingBackendId): EmbeddingBackendInfo;
+export declare function createConfiguredEmbedder(): Embedder;
+//# sourceMappingURL=EmbedderFactory.d.ts.map
