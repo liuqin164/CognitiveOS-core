@@ -1,4 +1,6 @@
 /** @public @since 2.0.0 Core public compatibility export surface. */
+export * from './factory.js';
+export * from './config/CogmemConfig.js';
 export * from './adapters/index.js';
 export * from './algorithm/AlgorithmReviewBackend.js';
 export * from './algorithm/AlgorithmReviewMetrics.js';
