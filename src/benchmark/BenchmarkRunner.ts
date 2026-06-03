@@ -2,6 +2,7 @@ import { EvalRunner, type EvalSuiteResult } from '../eval/runners/EvalRunner.js'
 import { BENCHMARK_GROUPS, getBenchmarkGroup, type BenchmarkGroup, type BenchmarkGroupBaseline } from './BenchmarkRegistry.js';
 
 export interface BenchmarkBaselineResult {
+  metricKey: string;
   label: string;
   value: number;
   passed: boolean;
@@ -41,6 +42,7 @@ export class BenchmarkRunner {
       const value = typeof rawValue === 'number' ? rawValue : 0;
 
       return {
+        metricKey: baseline.metricKey,
         label: baseline.label,
         value,
         passed: this.checkBaseline(value, baseline.operator, baseline.threshold),

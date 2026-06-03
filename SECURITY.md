@@ -11,6 +11,7 @@
 - Embedding providers may send text to the provider explicitly configured in `config.toml`.
 - Snapshot files should be treated as sensitive because they contain exported memory data.
 - Imports and migrations should be run with dry-run first when moving existing agent memory into core.
+- Raw chronological ledger events are written through the kernel so configured PII redaction runs before persistence. Encrypted deployments still treat ledger payloads as sensitive.
 - Agent-facing recall is governed by default: archived memory, suspect LLM inference, suspect tool observations, and suspect unverified claims are suppressed from active context.
 - Raw user utterances can be recalled as provenance evidence when explicitly tagged as raw user evidence; this does not promote them into verified facts.
 - Recall explanations expose same-project `filteredEvidence` with `reason` and optional `governanceReason`. Scoped explanations must not expose filtered evidence from other projects.

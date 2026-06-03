@@ -73,6 +73,7 @@ describe('core release metadata', () => {
       'cogmem-init',
       'cogmem-mcp',
       'cogmem-migrate-vectors',
+      'cogmem-normalize-transcript',
       'cogmem-re-embed',
       'cogmem-snapshot',
     ];
@@ -88,9 +89,36 @@ describe('core release metadata', () => {
     const manifest = packageJson();
 
     expect(manifest.files).toContain('README.md');
+    expect(manifest.files).toContain('MEMORY_MODEL.md');
+    expect(manifest.files).toContain('RECALL_EXPLAINABILITY.md');
+    expect(manifest.files).toContain('BENCHMARKS.md');
     expect(manifest.files).toContain('SECURITY.md');
     expect(manifest.files).toContain('CONTRIBUTING.md');
     expect(manifest.files).toContain('CHANGELOG.md');
     expect(manifest.files).toContain('RELEASE_CHECKLIST.md');
+  });
+
+  test('agent-facing docs describe chronological ledger, source anchors, and natural emergence metrics', () => {
+    const memoryModel = readText(join(coreRoot, 'MEMORY_MODEL.md'));
+    const explainability = readText(join(coreRoot, 'RECALL_EXPLAINABILITY.md'));
+    const benchmarks = readText(join(coreRoot, 'BENCHMARKS.md'));
+
+    expect(memoryModel).toContain('Chronological Memory Ledger');
+    expect(memoryModel).toContain('Raw Archive');
+    expect(memoryModel).toContain('Compiled Memory');
+    expect(memoryModel).toContain('chronological order is not recall ranking');
+    expect(memoryModel).toContain('sourceRefs');
+    expect(memoryModel).toContain('not a vector RAG store');
+    expect(memoryModel).toContain('rawEventType');
+    expect(memoryModel).toContain('tool_result');
+    expect(memoryModel).toContain('Normalized JSON array, JSONL, CSV, and TSV transcript imports');
+    expect(explainability).toContain('sourceAnchor');
+    expect(explainability).toContain('filteredEvidence');
+    expect(explainability).toContain('same-project');
+    expect(explainability).toContain('tool_call');
+    expect(explainability).toContain('normalized JSON/CSV imports');
+    expect(benchmarks).toContain('memory_natural_emergence');
+    expect(benchmarks).toContain('critical_memory_recall_rate');
+    expect(benchmarks).toContain('inhibition_correctness_rate');
   });
 });

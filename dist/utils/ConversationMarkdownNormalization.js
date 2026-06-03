@@ -68,22 +68,38 @@ export function writeNormalizedConversationMarkdown(outputPath, title, family, m
         `<!-- agent-brain-onboarding-path: ${DEFAULT_ONBOARDING_PATH} -->`,
         ...uniqueMarkers.map((marker) => `<!-- ${marker.key}: ${escapeMarkerValue(marker.value)} -->`),
         '',
-        ...messages.map((message) => `- [${message.timestamp}] ${message.role}: ${message.text}`)
+        ...messages.flatMap((message) => [
+            message.source ? `<!-- agent-brain-source-ref: ${escapeMarkerValue(JSON.stringify(message.source))} -->` : undefined,
+            `- [${message.timestamp}] ${message.role}: ${message.text}`,
+        ].filter((line) => Boolean(line)))
     ].join('\n');
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, content);
 }
 export function normalizeJsonlRecords(inputPath) {
     const input = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
-    const lines = input.split('\n').filter((line) => line.trim());
-    return lines.flatMap((line, index) => normalizeLooseRecord(JSON.parse(line), index));
+    let sourceOffset = 0;
+    return input.split('\n').flatMap((line, lineIndex) => {
+        if (!line.trim())
+            return [];
+        sourceOffset += 1;
+        return normalizeLooseRecord(JSON.parse(line), sourceOffset - 1, {
+            sourceOffset,
+            lineStart: lineIndex + 1,
+            lineEnd: lineIndex + 1,
+            orderingConfidence: 'high',
+        });
+    });
 }
 export function normalizeJsonArrayRecords(inputPath) {
     const parsed = JSON.parse(readFileSync(inputPath, 'utf8'));
     if (!Array.isArray(parsed)) {
         throw new Error('Expected a top-level JSON array.');
     }
-    return parsed.flatMap((item, index) => normalizeLooseRecord(asLooseRecord(item), index));
+    return parsed.flatMap((item, index) => normalizeLooseRecord(asLooseRecord(item), index, {
+        sourceOffset: index + 1,
+        orderingConfidence: 'high',
+    }));
 }
 export function normalizeDelimitedRecords(inputPath, format) {
     const input = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
@@ -93,15 +109,20 @@ export function normalizeDelimitedRecords(inputPath, format) {
     if (rows.length === 0) {
         throw new Error('Expected a header row plus at least one transcript row.');
     }
-    const headers = rows[0].map((cell) => normalizeHeader(cell));
+    const headers = rows[0].cells.map((cell) => normalizeHeader(cell));
     const messages = rows.slice(1).flatMap((row, index) => {
         const record = {};
         headers.forEach((header, columnIndex) => {
             if (!header)
                 return;
-            record[header] = row[columnIndex] ?? '';
+            record[header] = row.cells[columnIndex] ?? '';
         });
-        return normalizeLooseRecord(record, index);
+        return normalizeLooseRecord(record, index, {
+            sourceOffset: index + 1,
+            lineStart: row.lineStart,
+            lineEnd: row.lineEnd,
+            orderingConfidence: 'high',
+        });
     });
     return { family, messages };
 }
@@ -293,7 +314,11 @@ export function createExportBridge(recipe) {
         return [{
                 role: normalizeRole(recipe.mapRole(record, context)),
                 text,
-                timestamp: recipe.resolveTimestamp(record, context)
+                timestamp: recipe.resolveTimestamp(record, context),
+                source: {
+                    sourceOffset: context.index + 1,
+                    orderingConfidence: 'high',
+                },
             }];
     });
     const normalizeRoot = (input) => {
@@ -376,14 +401,18 @@ function dedupeMarkers(markers) {
     }
     return output;
 }
-function normalizeLooseRecord(item, index) {
+function normalizeLooseRecord(item, index, source) {
     const text = pickMessageText(item);
     if (!text)
         return [];
     return [{
             role: normalizeRole(coerceText(item.role)),
             text,
-            timestamp: pickTimestamp(item, Date.now() + index * 1000)
+            timestamp: pickTimestamp(item, Date.now() + index * 1000),
+            source: source ?? {
+                sourceOffset: index + 1,
+                orderingConfidence: 'high',
+            },
         }];
 }
 function coerceText(value) {
@@ -438,6 +467,8 @@ function parseDelimited(input, delimiter) {
     let row = [];
     let cell = '';
     let inQuotes = false;
+    let lineNumber = 1;
+    let rowStartLine = 1;
     for (let index = 0; index < input.length; index += 1) {
         const char = input[index];
         const next = input[index + 1];
@@ -459,17 +490,21 @@ function parseDelimited(input, delimiter) {
         if (!inQuotes && char === '\n') {
             row.push(cell);
             if (row.some((value) => value.trim())) {
-                rows.push(row);
+                rows.push({ cells: row, lineStart: rowStartLine, lineEnd: lineNumber });
             }
             row = [];
             cell = '';
+            lineNumber += 1;
+            rowStartLine = lineNumber;
             continue;
         }
+        if (char === '\n')
+            lineNumber += 1;
         cell += char;
     }
     row.push(cell);
     if (row.some((value) => value.trim())) {
-        rows.push(row);
+        rows.push({ cells: row, lineStart: rowStartLine, lineEnd: lineNumber });
     }
     return rows;
 }

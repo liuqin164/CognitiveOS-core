@@ -3,5 +3,8 @@ export {
   type AgentRecallItem,
   type AgentRecallQuery,
   type AgentRecallResult,
+  type AgentTaskEventMemory,
+  type AgentToolCallMemory,
+  type AgentToolObservationMemory,
   type AgentTurnMemory,
 } from './AgentMemoryBackend.js';

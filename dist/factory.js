@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { BeliefStore } from './belief/BeliefStore.js';
 import { IngestionCursorStore } from './batch/IngestionCursorStore.js';
 import { MemoryGraph } from './core/MemoryGraph.js';
@@ -260,12 +260,18 @@ export class MemoryKernel {
             eventType: 'INGESTED',
             projectId: neuron.metadata.projectId,
             sourceNeuronId: neuron.id,
+            parentEventId: normalizedInput.sourceRefs?.find((ref) => ref.eventId)?.eventId,
+            causalityType: normalizedInput.sourceRefs?.some((ref) => ref.eventId) ? 'derived_from' : undefined,
+            sourceId: normalizedInput.sourceRefs?.[0]?.sourceId,
+            contentHash: normalizedInput.sourceRefs?.[0]?.contentHash,
             payload: {
                 neuronId: neuron.id,
                 selfHash: neuron.self_hash,
                 prevHash: neuron.prev_hash,
                 type: neuron.metadata.type,
                 createdAt: neuron.metadata.createdAt,
+                source: normalizedInput.source,
+                sourceRefs: normalizedInput.sourceRefs || [],
             },
         });
         neuron.metadata.sourceEventId = ingestedEvent.eventId;
@@ -380,6 +386,144 @@ export class MemoryKernel {
             ]),
         };
     }
+    recordRawEvent(input) {
+        const text = this.piiRedactor ? this.piiRedactor.redact(input.content).text : input.content;
+        const occurredAt = input.occurredAt ?? Date.now();
+        return this.eventStore.append({
+            streamId: input.threadId,
+            streamType: 'thread',
+            eventType: 'RAW_EVENT_RECORDED',
+            rawEventType: input.rawEventType ?? 'message',
+            projectId: input.projectId,
+            workspaceId: input.workspaceId,
+            actorId: input.role,
+            sourceId: input.sourceId,
+            contentHash: createHash('sha256').update(text).digest('hex'),
+            threadId: input.threadId,
+            sessionId: input.sessionId,
+            localDate: input.localDate,
+            turnId: input.turnId,
+            turnSeq: input.turnSeq,
+            eventOrdinal: input.eventOrdinal,
+            role: input.role,
+            parentEventId: input.parentEventId,
+            prevEventId: input.prevEventId,
+            causalityType: input.causalityType,
+            occurredAt,
+            orderingConfidence: 'high',
+            payload: {
+                text,
+                metadata: input.metadata,
+            },
+        });
+    }
+    recordToolCall(input) {
+        const text = input.content ?? `Tool call ${input.toolName}: ${stringifyToolPayload(input.input)}`;
+        const event = this.recordRawEvent({
+            projectId: input.projectId,
+            workspaceId: input.workspaceId,
+            threadId: input.threadId,
+            sessionId: input.sessionId,
+            turnId: input.turnId,
+            turnSeq: input.turnSeq,
+            role: 'assistant',
+            rawEventType: 'tool_call',
+            content: text,
+            eventOrdinal: input.eventOrdinal,
+            occurredAt: input.occurredAt,
+            parentEventId: input.assistantEventId,
+            prevEventId: input.assistantEventId,
+            causalityType: input.assistantEventId ? 'triggered_by' : undefined,
+            sourceId: input.sourceId,
+            metadata: {
+                ...input.metadata,
+                toolCallId: input.toolCallId,
+                toolName: input.toolName,
+                input: input.input,
+            },
+        });
+        if (input.assistantEventId) {
+            this.eventStore.updateNextEventId(input.assistantEventId, event.eventId);
+        }
+        return {
+            ...event,
+            payload: {
+                text: event.payload.text,
+                toolCallId: input.toolCallId,
+                toolName: input.toolName,
+                input: input.input,
+                metadata: event.payload.metadata,
+            },
+        };
+    }
+    recordToolResult(input) {
+        const event = this.recordRawEvent({
+            projectId: input.projectId,
+            workspaceId: input.workspaceId,
+            threadId: input.threadId,
+            sessionId: input.sessionId,
+            turnId: input.turnId,
+            turnSeq: input.turnSeq,
+            role: 'tool',
+            rawEventType: 'tool_result',
+            content: input.output,
+            eventOrdinal: input.eventOrdinal,
+            occurredAt: input.occurredAt,
+            parentEventId: input.toolCallEventId,
+            prevEventId: input.toolCallEventId,
+            causalityType: 'tool_result_for',
+            sourceId: input.sourceId,
+            metadata: {
+                ...input.metadata,
+                toolCallId: input.toolCallId,
+                toolName: input.toolName,
+            },
+        });
+        this.eventStore.updateNextEventId(input.toolCallEventId, event.eventId);
+        return {
+            ...event,
+            payload: {
+                text: event.payload.text,
+                toolCallId: input.toolCallId,
+                toolName: input.toolName,
+                output: event.payload.text,
+                metadata: event.payload.metadata,
+            },
+        };
+    }
+    recordTaskEvent(input) {
+        const event = this.recordRawEvent({
+            projectId: input.projectId,
+            workspaceId: input.workspaceId,
+            threadId: input.threadId,
+            sessionId: input.sessionId,
+            turnId: input.turnId,
+            turnSeq: input.turnSeq,
+            role: input.role ?? 'system',
+            rawEventType: input.rawEventType ?? 'task_event',
+            content: input.content,
+            eventOrdinal: input.eventOrdinal,
+            occurredAt: input.occurredAt,
+            parentEventId: input.parentEventId,
+            prevEventId: input.parentEventId,
+            causalityType: input.parentEventId ? 'triggered_by' : undefined,
+            sourceId: input.sourceId,
+            metadata: {
+                ...input.metadata,
+                taskId: input.taskId,
+                title: input.title,
+            },
+        });
+        return {
+            ...event,
+            payload: {
+                text: event.payload.text,
+                taskId: input.taskId,
+                title: input.title,
+                metadata: event.payload.metadata,
+            },
+        };
+    }
     async consolidate(options = {}) {
         const endTime = options.endTime ?? Date.now() + 1;
         const startTime = options.startTime ?? 0;
@@ -441,6 +585,12 @@ export class MemoryKernel {
                 endTime,
             },
         });
+    }
+    getThreadEvents(threadId, options = {}) {
+        return this.eventStore.getThreadEvents(threadId, options);
+    }
+    getEventContext(eventId, options = {}) {
+        return this.eventStore.getEventContext(eventId, options);
     }
     async exportSnapshot(outputPath) {
         const exporter = new SnapshotExporter({
@@ -735,4 +885,16 @@ function uniqueFilteredEvidence(items) {
         uniqueItems.push(item);
     }
     return uniqueItems;
+}
+function stringifyToolPayload(value) {
+    if (value === undefined)
+        return '';
+    if (typeof value === 'string')
+        return value;
+    try {
+        return JSON.stringify(value);
+    }
+    catch {
+        return String(value);
+    }
 }

@@ -18,6 +18,7 @@ export class BenchmarkRunner {
             const rawValue = suiteResult.metrics[baseline.metricKey];
             const value = typeof rawValue === 'number' ? rawValue : 0;
             return {
+                metricKey: baseline.metricKey,
                 label: baseline.label,
                 value,
                 passed: this.checkBaseline(value, baseline.operator, baseline.threshold),

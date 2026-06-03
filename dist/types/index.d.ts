@@ -2,6 +2,10 @@ export type NeuronType = 'code' | 'chat' | 'doc' | 'command' | 'file' | 'agent_f
 export type NeuronStatus = 'active' | 'cold' | 'suspect' | 'archived';
 export type SourceType = 'user_input' | 'llm_inference' | 'verified_fact' | 'external_tool';
 export type MemoryImportanceLevel = 'low' | 'normal' | 'important' | 'permanent';
+export type MemoryEventRole = 'user' | 'assistant' | 'agent' | 'tool' | 'system' | 'narrator';
+export type MemoryEventCausalityType = 'replies_to' | 'tool_result_for' | 'derived_from' | 'summarizes' | 'corrects' | 'supersedes' | 'triggered_by';
+export type OrderingConfidence = 'high' | 'medium' | 'low';
+export type MemoryRawEventType = 'message' | 'tool_call' | 'tool_result' | 'memory_write' | 'correction' | 'summary' | 'action_result' | 'task_event';
 export interface SkillNeuronMetadata {
     skillId: string;
     skillVersion: string;
@@ -47,6 +51,7 @@ export interface NeuronMetadata {
     };
     communityId?: string;
     lastReinforcedAt?: number;
+    sourceRefs?: MemorySourceRef[];
 }
 export interface TopicNode {
     path: string;
@@ -178,11 +183,13 @@ export interface IngestInput {
     updatedAt?: number;
     sourceType?: SourceType;
     source?: string;
+    sourceEventId?: string;
+    sourceRefs?: MemorySourceRef[];
     importanceLevel?: MemoryImportanceLevel;
     isPinned?: boolean;
 }
-export type StreamType = 'neuron' | 'belief' | 'file' | 'chain' | 'system';
-export type MemoryEventType = 'INGESTED' | 'ACTIVATED' | 'BELIEF_UPSERTED' | 'BELIEF_RECALIBRATED' | 'BELIEF_SUPERSEDED' | 'BELIEF_REVOKED' | 'TOPOLOGY_COMPILED' | 'COGNITIVE_GRAPH_COMPILED' | 'ARCHIVED' | 'RESTORED' | 'INDEX_REBUILT' | 'RUNTIME_STATE_UPDATED' | 'RUNTIME_TRANSITION_RECORDED' | 'POLICY_EXECUTION_UPDATED';
+export type StreamType = 'neuron' | 'belief' | 'file' | 'chain' | 'thread' | 'system';
+export type MemoryEventType = 'RAW_EVENT_RECORDED' | 'INGESTED' | 'ACTIVATED' | 'BELIEF_UPSERTED' | 'BELIEF_RECALIBRATED' | 'BELIEF_SUPERSEDED' | 'BELIEF_REVOKED' | 'TOPOLOGY_COMPILED' | 'COGNITIVE_GRAPH_COMPILED' | 'ARCHIVED' | 'RESTORED' | 'INDEX_REBUILT' | 'RUNTIME_STATE_UPDATED' | 'RUNTIME_TRANSITION_RECORDED' | 'POLICY_EXECUTION_UPDATED';
 export type TimeBucketType = 'day' | 'week' | 'month';
 export type ProjectBranchKind = 'project_root' | 'interaction' | 'belief' | 'fact' | 'event' | 'task';
 export type EventClusterType = 'approval' | 'rejection' | 'issue' | 'project' | 'fact' | 'generic';
@@ -253,19 +260,77 @@ export interface CognitiveEdgeRecord {
 }
 export interface MemoryEvent<TPayload = Record<string, unknown>> {
     eventId: string;
+    globalSeq?: number;
     streamId: string;
     streamType: StreamType;
     eventType: MemoryEventType;
+    rawEventType?: MemoryRawEventType;
     eventVersion: number;
     projectId?: string;
+    workspaceId?: string;
     actorId?: string;
     causationId?: string;
     correlationId?: string;
     sourceNeuronId?: string;
+    sourceId?: string;
+    contentHash?: string;
+    threadId?: string;
+    sessionId?: string;
+    localDate?: string;
+    threadSeq?: number;
+    turnId?: string;
+    turnSeq?: number;
+    eventOrdinal?: number;
+    role?: MemoryEventRole;
+    parentEventId?: string;
+    prevEventId?: string;
+    nextEventId?: string;
+    causalityType?: MemoryEventCausalityType;
+    sourceOffset?: number;
+    lineStart?: number;
+    lineEnd?: number;
+    charStart?: number;
+    charEnd?: number;
+    orderingConfidence?: OrderingConfidence;
     occurredAt: number;
     payload: TPayload;
     payloadHash: string;
     createdAt: number;
+    ingestedAt?: number;
+}
+export interface MemorySourceRef {
+    eventId?: string;
+    eventType?: string;
+    sourceId?: string;
+    sourcePath?: string;
+    sourceType?: string;
+    recordId?: string;
+    contentHash?: string;
+    threadId?: string;
+    sessionId?: string;
+    turnId?: string;
+    parentEventId?: string;
+    prevEventId?: string;
+    nextEventId?: string;
+    causalityType?: MemoryEventCausalityType;
+    role?: MemoryEventRole;
+    threadSeq?: number;
+    turnSeq?: number;
+    eventOrdinal?: number;
+    sourceOffset?: number;
+    lineStart?: number;
+    lineEnd?: number;
+    charStart?: number;
+    charEnd?: number;
+    orderingConfidence?: OrderingConfidence;
+    metadata?: Record<string, unknown>;
+}
+export interface MemoryEventContext {
+    event: MemoryEvent;
+    before: MemoryEvent[];
+    after: MemoryEvent[];
+    parent?: MemoryEvent;
+    children: MemoryEvent[];
 }
 export type ScopeType = 'global' | 'project' | 'session' | 'agent' | 'file';
 export type BeliefStatus = 'active' | 'superseded' | 'revoked' | 'suspect' | 'expired';
@@ -780,6 +845,7 @@ export interface EventAuditPage {
         causationId?: string[];
         correlationId?: string[];
         projectId?: string[];
+        threadId?: string[];
         startTime?: number;
         endTime?: number;
     };

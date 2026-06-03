@@ -29,16 +29,24 @@ export class ConversationMarkdownAdapter {
         const messages = [];
         let current = null;
         let currentDateHint;
+        let pendingSourceRef;
         let ignoredPrelude = 0;
         const flush = () => {
             if (!current)
                 return;
             const text = current.text.trim();
-            if (text)
-                messages.push({ ...current, text });
+            if (text) {
+                const lineSpan = Math.max(1, text.split('\n').length);
+                messages.push({ ...current, text, lineEnd: current.lineNumber + lineSpan - 1 });
+            }
             current = null;
         };
         lines.forEach((line, index) => {
+            const sourceRefMarker = parseSourceRefMarker(line);
+            if (sourceRefMarker) {
+                pendingSourceRef = sourceRefMarker;
+                return;
+            }
             if (/^<!--\s*agent-brain-[a-z0-9_-]+:/i.test(line.trim()) || /^<!--\s*agent-brain-normalized\s*:/i.test(line.trim())) {
                 return;
             }
@@ -54,8 +62,11 @@ export class ConversationMarkdownAdapter {
                     role: parsed.role,
                     text: parsed.text,
                     timestamp: resolveTimestampWithContext(parsed.timestamp, fallbackTime + index, currentDateHint),
-                    lineNumber: index + 1
+                    lineNumber: index + 1,
+                    lineEnd: index + 1,
+                    sourceRef: pendingSourceRef,
                 };
+                pendingSourceRef = undefined;
                 return;
             }
             if (!current) {
@@ -96,11 +107,18 @@ export class ConversationMarkdownAdapter {
         let turnCursor = 0;
         let openTurnId;
         let lastRole;
+        let eventOrdinal = 0;
         for (const message of messages) {
             if (!openTurnId || message.role === 'user' || (lastRole === 'agent' && message.role !== 'agent')) {
                 turnCursor += 1;
+                eventOrdinal = 0;
                 openTurnId = computeStableHash([source.sourceId, snapshot.fileHash, 'turn', turnCursor]);
             }
+            eventOrdinal += 1;
+            const sourceOffset = message.sourceRef?.sourceOffset ?? records.length + 1;
+            const lineStart = message.sourceRef?.lineStart ?? message.lineNumber;
+            const lineEnd = message.sourceRef?.lineEnd ?? message.lineEnd;
+            const orderingConfidence = message.sourceRef?.orderingConfidence ?? 'high';
             const recordHash = computeStableHash([
                 source.sourceId,
                 message.role,
@@ -119,7 +137,15 @@ export class ConversationMarkdownAdapter {
                 sourceTypeHint: message.role === 'agent' ? 'llm_inference' : 'user_input',
                 metadata: {
                     lineNumber: message.lineNumber,
-                    turnIndex: turnCursor
+                    lineStart,
+                    lineEnd,
+                    charStart: message.sourceRef?.charStart,
+                    charEnd: message.sourceRef?.charEnd,
+                    sourceOffset,
+                    turnIndex: turnCursor,
+                    turnSeq: turnCursor,
+                    eventOrdinal,
+                    orderingConfidence
                 },
                 provenance: {
                     sourceId: source.sourceId,
@@ -129,11 +155,42 @@ export class ConversationMarkdownAdapter {
                     fileHash: snapshot.fileHash,
                     fileMtimeMs: snapshot.fileMtimeMs,
                     recordHash,
-                    reliabilityClass: 'raw_utterance'
+                    reliabilityClass: 'raw_utterance',
+                    lineStart,
+                    lineEnd,
+                    charStart: message.sourceRef?.charStart,
+                    charEnd: message.sourceRef?.charEnd,
+                    sourceOffset,
+                    orderingConfidence
                 }
             });
             lastRole = message.role;
         }
         return records;
     }
+}
+function parseSourceRefMarker(line) {
+    const match = line.trim().match(/^<!--\s*agent-brain-source-ref:\s*([^]+?)\s*-->$/i);
+    if (!match?.[1])
+        return undefined;
+    try {
+        const parsed = JSON.parse(match[1].replace(/--&gt;/g, '-->'));
+        return {
+            sourceOffset: numberField(parsed.sourceOffset),
+            lineStart: numberField(parsed.lineStart),
+            lineEnd: numberField(parsed.lineEnd),
+            charStart: numberField(parsed.charStart),
+            charEnd: numberField(parsed.charEnd),
+            orderingConfidence: orderingConfidenceField(parsed.orderingConfidence),
+        };
+    }
+    catch {
+        return undefined;
+    }
+}
+function numberField(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+function orderingConfidenceField(value) {
+    return value === 'high' || value === 'medium' || value === 'low' ? value : undefined;
 }

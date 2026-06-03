@@ -113,6 +113,42 @@ console.log(result.items);
 
 `KernelAgentMemoryBackend.recall()` routes through universe navigation first. That means core activates related entities, temporal branches, and graph neighbors, assembles a narrative summary, and returns context that is already prepared for the agent. `MemoryKernel.recall()` remains available as the lower-level BrainRecall path; the backend uses it only as a fallback when universe navigation yields no scoped evidence.
 
+## Memory Model
+
+Core separates raw chronological evidence from ranked recall. The Chronological Memory Ledger records ordered raw events for replay and audit; governed recall ranks memories by relevance, importance, confidence, recency, scope, pulse activation, and inhibition.
+
+Use `MemoryKernel.getThreadEvents(threadId)` to replay raw events in ledger order and `MemoryKernel.getEventContext(eventId, { before, after })` to inspect surrounding source context. Use `KernelAgentMemoryBackend.recall()` for current agent context. Do not use replay as a prompt dump.
+
+Semantic memories can point back to raw events through `sourceRefs`; `explainRecallWithKernel()` includes `sourceAnchor` when provenance is available. See `MEMORY_MODEL.md` and `RECALL_EXPLAINABILITY.md`.
+
+External agents can record lifecycle events through the narrow facade without importing host runtime concepts:
+
+```ts
+await memory.ingestToolCall({
+  agentId: 'openclaw',
+  projectId: 'workspace-a',
+  sessionId: 'session-1',
+  threadId: 'thread-1',
+  assistantEventId,
+  toolCallId: 'call-1',
+  toolName: 'read_file',
+  input: { path: 'migration.ts' },
+});
+
+await memory.ingestToolObservation({
+  agentId: 'openclaw',
+  projectId: 'workspace-a',
+  sessionId: 'session-1',
+  threadId: 'thread-1',
+  toolCallEventId,
+  toolCallId: 'call-1',
+  toolName: 'read_file',
+  output: 'migration.ts contains an idempotent ALTER TABLE.',
+});
+```
+
+`ingestToolObservation()` stores a raw `tool_result` ledger event and an `external_tool` semantic evidence candidate with `sourceRefs`. It does not promote tool output into a verified fact.
+
 ## Governed Recall And Explainability
 
 Agent-facing recall is governed by default. `KernelAgentMemoryBackend.recall()`, `MemoryKernel.navigateMemory()`, and `BrainRecall` exclude non-recallable evidence from active context before returning `rawEvidence` or backend `items`.
@@ -133,6 +169,42 @@ Core is an agent memory kernel, not a knowledge-base application, wiki front end
 Use the import tools when an external agent already has memory files and needs to migrate them into the kernel store. Always run `--dry-run` first. Import is project-scoped and idempotent; re-running against the same database skips records already processed by the cursor store.
 
 Imported records are embedded through the configured kernel embedder. To import through a local quantized embedding model, configure the kernel before running the importer. For example, with Ollama:
+
+JSON/JSONL/CSV/TSV transcript exports should be normalized before batch ingestion. The normalizer emits per-message source anchors so imported `sourceRefs` preserve original array order, CSV row line, or block ordinal when available.
+
+Normalize a JSON array transcript:
+
+```bash
+./node_modules/.bin/cogmem-normalize-transcript \
+  --input ./memory.json \
+  --output ./memory.normalized.md \
+  --family json-array \
+  --dry-run --json
+
+./node_modules/.bin/cogmem-normalize-transcript \
+  --input ./memory.json \
+  --output ./memory.normalized.md \
+  --family json-array
+```
+
+Normalize CSV or TSV transcript exports:
+
+```bash
+./node_modules/.bin/cogmem-normalize-transcript \
+  --input ./memory.csv \
+  --output ./memory.normalized.md \
+  --family csv \
+  --dry-run --json
+
+./node_modules/.bin/cogmem-normalize-transcript \
+  --input ./memory.tsv \
+  --output ./memory.normalized.md \
+  --family tsv
+```
+
+Supported `--family` values are `json-array`, `jsonl`, `csv`, `tsv`, `app-private-mixed-event`, and `jsonl-mixed-event-log`. If omitted, `.json`, `.jsonl`, `.csv`, and `.tsv` are inferred from the input extension.
+
+The output is normalized conversation Markdown. Each normalized message includes an `agent-brain-source-ref` comment when the original source offset, JSON array index, CSV row line, or ordering confidence is available. `cogmem-normalize-transcript` does not open a memory database, run recall, change pulse activation, or install runtime features; it only prepares source-preserving Markdown for later import.
 
 ```bash
 ollama pull qwen3-embedding:0.6b
@@ -271,10 +343,13 @@ cogmem-explain-recall    # explain pulse/temporal/narrative recall decisions
 cogmem-mcp               # stdio MCP server exposing cogmem memory tools
 cogmem-import-openclaw   # migrate OpenClaw workspace memory into core
 cogmem-import-hermes     # migrate Hermes profile/session memory into core
+cogmem-normalize-transcript # normalize JSON/JSONL/CSV/TSV transcript exports to source-ref Markdown
 cogmem-snapshot          # export/import snapshot helper
 cogmem-re-embed          # re-embedding helper
 cogmem-migrate-vectors   # vector backend migration helper; uses config vector_dimension unless --dimension is passed
 ```
+
+Benchmark groups are documented in `BENCHMARKS.md`; `memory_natural_emergence` tracks recall, inhibition, leakage, provenance, budget, and pulse expansion metrics.
 
 ## Public API Policy
 

@@ -29,6 +29,10 @@ export type {
   MemoryKernelNavigationOptions,
   MemoryKernelNavigationResult,
   MemoryKernelOptions,
+  RawMemoryEventInput,
+  TaskMemoryEventInput,
+  ToolCallMemoryEventInput,
+  ToolResultMemoryEventInput,
 } from './factory.js';
 
 /**
@@ -57,6 +61,9 @@ export {
   type AgentRecallItem,
   type AgentRecallQuery,
   type AgentRecallResult,
+  type AgentTaskEventMemory,
+  type AgentToolCallMemory,
+  type AgentToolObservationMemory,
   type AgentTurnMemory,
 } from './agent/index.js';
 
@@ -72,7 +79,17 @@ export type { BrainRecallResult } from './types/BrainRecallResult.js';
  * Neuron types — the fundamental memory unit.
  * @stable @since 1.0.0
  */
-export type { Neuron, NeuronType } from './types/index.js';
+export type {
+  MemoryEvent,
+  MemoryEventContext,
+  MemoryEventCausalityType,
+  MemoryRawEventType,
+  MemoryEventRole,
+  MemorySourceRef,
+  Neuron,
+  NeuronType,
+  OrderingConfidence,
+} from './types/index.js';
 export type { ImportanceLevel } from './core/ImportanceLevels.js';
 
 /**
@@ -207,7 +224,12 @@ export type { UniverseTraversalExecution, UniverseTraversalSegment } from './ret
  * @beta @since 2.0.0
  */
 export { explainRecallWithKernel } from './recall/RecallExplanation.js';
-export type { RecallExplanation, RecallExplanationEvidence, RecallExplanationOptions } from './recall/RecallExplanation.js';
+export type {
+  RecallExplanation,
+  RecallExplanationEvidence,
+  RecallExplanationOptions,
+  RecallExplanationSourceAnchor,
+} from './recall/RecallExplanation.js';
 export { callCogmemMcpTool, listCogmemMcpTools } from './mcp/CoreMcpTools.js';
 export type { CogmemMcpCallResult, CogmemMcpRuntime, CogmemMcpTool } from './mcp/CoreMcpTools.js';
 

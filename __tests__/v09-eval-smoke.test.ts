@@ -18,6 +18,16 @@ const KNOWN_BASELINE_METRICS = {
   stream_p99_ms: 80,
   delivery_rate: 1.0,
   continuity_rate: 1.0,
+  critical_memory_recall_rate: 1.0,
+  old_but_important_recall_rate: 1.0,
+  stale_memory_leakage_rate: 0.0,
+  superseded_fact_leakage_rate: 0.0,
+  suspect_memory_leakage_rate: 0.0,
+  cross_project_leakage_rate: 0.0,
+  provenance_completeness_rate: 1.0,
+  context_budget_efficiency: 0.95,
+  pulse_activation_useful_expansion_rate: 0.7,
+  inhibition_correctness_rate: 1.0,
   tool_call_usefulness_rate: 0.75,
   unnecessary_tool_call_rate: 0.1,
   policy_rejection_rate: 0.2,
@@ -46,14 +56,14 @@ function makeMockEvalRunner() {
 }
 
 describe('v0.9 eval baselines regression', () => {
-  test('BenchmarkRunner.runAll passes all 10 groups against known baselines', async () => {
+  test('BenchmarkRunner.runAll passes all registered groups against known baselines', async () => {
     const mockEvalRunner = makeMockEvalRunner();
     const runner = new BenchmarkRunner(mockEvalRunner as never);
 
     const results = await runner.runAll();
 
-    expect(results).toHaveLength(10);
-    expect(BENCHMARK_GROUPS).toHaveLength(10);
+    expect(results).toHaveLength(BENCHMARK_GROUPS.length);
+    expect(BENCHMARK_GROUPS.some((group) => group.name === 'memory_natural_emergence')).toBe(true);
     expect(results.every((result) => result.passed)).toBe(true);
     expect(KNOWN_BASELINE_METRICS.brain_vs_dump_token_ratio).toBeLessThanOrEqual(0.05);
     expect(KNOWN_BASELINE_METRICS.brain_stale_leakage).toBe(0.0);

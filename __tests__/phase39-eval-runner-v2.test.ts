@@ -8,6 +8,10 @@ import { ProposalEvalRunner } from '../src/meta/ProposalEvalRunner.js';
 import { ProposalLedger } from '../src/meta/ProposalLedger.js';
 import type { PolicyProposal, ProposalStatus } from '../src/meta/types.js';
 
+const MEMORY_RECALL_GROUP_NAMES = BENCHMARK_GROUPS
+  .filter((group) => group.suiteName === 'memory_recall')
+  .map((group) => group.name);
+
 class RecordingProposalLedger extends ProposalLedger {
   readonly statusUpdates: Array<{ id: string; status: ProposalStatus; evalReport?: string }> = [];
 
@@ -39,7 +43,7 @@ class MockBenchmarkRunner extends BenchmarkRunner {
     this.runCalls.push(groupName);
     const result = this.results[groupName];
     if (!result) {
-      throw new Error(`Missing mock result for ${groupName}`);
+      return makeGroupResult(groupName);
     }
     return result;
   }
@@ -111,6 +115,7 @@ function makeBaseline(
   const formatAs = overrides.formatAs ?? baseline.formatAs;
 
   return {
+    metricKey: overrides.metricKey ?? baseline.metricKey,
     label,
     value,
     passed: overrides.passed ?? true,
@@ -226,7 +231,7 @@ describe('Phase 39 ProposalEvalRunner v2', () => {
 
     await new ProposalEvalRunner(ledger, makeEvalRunnerStub(), runner).evaluate(proposal.id);
 
-    expect(runner.runCalls).toEqual(['memory_governance']);
+    expect(runner.runCalls).toEqual(MEMORY_RECALL_GROUP_NAMES);
   });
 
   test('empty evalPlan falls back to memory_recall', async () => {
@@ -237,7 +242,7 @@ describe('Phase 39 ProposalEvalRunner v2', () => {
 
     await new ProposalEvalRunner(ledger, makeEvalRunnerStub(), runner).evaluate(proposal.id);
 
-    expect(runner.runCalls).toEqual(['memory_governance']);
+    expect(runner.runCalls).toEqual(MEMORY_RECALL_GROUP_NAMES);
   });
 
   test('unknown evalPlan suite falls back to all benchmark groups', async () => {
@@ -313,7 +318,7 @@ describe('Phase 39 ProposalEvalRunner v2', () => {
       makeGroupResult('memory_governance')
     ])).evaluate(proposal.id);
 
-    expect(verdict.evalResults).toHaveLength(2);
+    expect(verdict.evalResults).toHaveLength(MEMORY_RECALL_GROUP_NAMES.length + 1);
   });
 
   test('regressions expose groupName metricLabel currentValue threshold and operator', async () => {
@@ -479,7 +484,10 @@ describe('Phase 39 ProposalEvalRunner v2', () => {
       makeGroupResult('memory_governance')
     ])).evaluate(proposal.id);
 
-    expect(verdict.benchmarkResults.map((result) => result.group.name)).toEqual(['memory_governance', 'fast_path']);
+    expect(verdict.benchmarkResults.map((result) => result.group.name)).toEqual([
+      ...MEMORY_RECALL_GROUP_NAMES,
+      'fast_path',
+    ]);
   });
 
   test('evalResults preserve suite names for backward compatibility', async () => {
@@ -492,7 +500,10 @@ describe('Phase 39 ProposalEvalRunner v2', () => {
       makeGroupResult('memory_governance')
     ])).evaluate(proposal.id);
 
-    expect(verdict.evalResults.map((result) => result.suiteName)).toEqual(['memory_recall', 'fast_path']);
+    expect(verdict.evalResults.map((result) => result.suiteName)).toEqual([
+      ...MEMORY_RECALL_GROUP_NAMES.map(() => 'memory_recall'),
+      'fast_path',
+    ]);
   });
 
   test('ranAt uses the latest suiteResult timestamp', async () => {
@@ -553,7 +564,7 @@ describe('Phase 39 ProposalEvalRunner v2', () => {
     const verdict = await new ProposalEvalRunner(ledger, makeEvalRunnerStub(), runner).evaluate(proposal.id);
 
     expect(verdict.passed).toBe(true);
-    expect(runner.runCalls).toEqual(['memory_governance']);
+    expect(runner.runCalls).toEqual(MEMORY_RECALL_GROUP_NAMES);
   });
 
   test('backward-compatible constructor works when benchmarkRunner is omitted', async () => {
@@ -583,7 +594,7 @@ describe('Phase 39 ProposalEvalRunner v2', () => {
 
     await new ProposalEvalRunner(ledger, makeEvalRunnerStub(), runner).evaluate(proposal.id);
 
-    expect(started).toHaveBeenCalledTimes(1);
+    expect(started).toHaveBeenCalledTimes(MEMORY_RECALL_GROUP_NAMES.length);
   });
 
   test('fast_path report includes both baseline lines', async () => {

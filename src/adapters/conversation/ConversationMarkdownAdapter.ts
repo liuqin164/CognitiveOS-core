@@ -22,6 +22,17 @@ interface ParsedMessage {
   text: string;
   timestamp: number;
   lineNumber: number;
+  lineEnd: number;
+  sourceRef?: ParsedSourceRefMarker;
+}
+
+interface ParsedSourceRefMarker {
+  sourceOffset?: number;
+  lineStart?: number;
+  lineEnd?: number;
+  charStart?: number;
+  charEnd?: number;
+  orderingConfidence?: 'high' | 'medium' | 'low';
 }
 
 export class ConversationMarkdownAdapter implements SourceAdapter {
@@ -64,16 +75,26 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
     const messages: ParsedMessage[] = [];
     let current: ParsedMessage | null = null;
     let currentDateHint: string | undefined;
+    let pendingSourceRef: ParsedSourceRefMarker | undefined;
     let ignoredPrelude = 0;
 
     const flush = (): void => {
       if (!current) return;
       const text = current.text.trim();
-      if (text) messages.push({ ...current, text });
+      if (text) {
+        const lineSpan = Math.max(1, text.split('\n').length);
+        messages.push({ ...current, text, lineEnd: current.lineNumber + lineSpan - 1 });
+      }
       current = null;
     };
 
     lines.forEach((line, index) => {
+      const sourceRefMarker = parseSourceRefMarker(line);
+      if (sourceRefMarker) {
+        pendingSourceRef = sourceRefMarker;
+        return;
+      }
+
       if (/^<!--\s*agent-brain-[a-z0-9_-]+:/i.test(line.trim()) || /^<!--\s*agent-brain-normalized\s*:/i.test(line.trim())) {
         return;
       }
@@ -91,8 +112,11 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
           role: parsed.role,
           text: parsed.text,
           timestamp: resolveTimestampWithContext(parsed.timestamp, fallbackTime + index, currentDateHint),
-          lineNumber: index + 1
+          lineNumber: index + 1,
+          lineEnd: index + 1,
+          sourceRef: pendingSourceRef,
         };
+        pendingSourceRef = undefined;
         return;
       }
 
@@ -140,12 +164,19 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
     let turnCursor = 0;
     let openTurnId: string | undefined;
     let lastRole: SourceActorRole | undefined;
+    let eventOrdinal = 0;
 
     for (const message of messages) {
       if (!openTurnId || message.role === 'user' || (lastRole === 'agent' && message.role !== 'agent')) {
         turnCursor += 1;
+        eventOrdinal = 0;
         openTurnId = computeStableHash([source.sourceId, snapshot.fileHash, 'turn', turnCursor]);
       }
+      eventOrdinal += 1;
+      const sourceOffset = message.sourceRef?.sourceOffset ?? records.length + 1;
+      const lineStart = message.sourceRef?.lineStart ?? message.lineNumber;
+      const lineEnd = message.sourceRef?.lineEnd ?? message.lineEnd;
+      const orderingConfidence = message.sourceRef?.orderingConfidence ?? 'high';
 
       const recordHash = computeStableHash([
         source.sourceId,
@@ -166,7 +197,15 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
         sourceTypeHint: message.role === 'agent' ? 'llm_inference' : 'user_input',
         metadata: {
           lineNumber: message.lineNumber,
-          turnIndex: turnCursor
+          lineStart,
+          lineEnd,
+          charStart: message.sourceRef?.charStart,
+          charEnd: message.sourceRef?.charEnd,
+          sourceOffset,
+          turnIndex: turnCursor,
+          turnSeq: turnCursor,
+          eventOrdinal,
+          orderingConfidence
         },
         provenance: {
           sourceId: source.sourceId,
@@ -176,7 +215,13 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
           fileHash: snapshot.fileHash,
           fileMtimeMs: snapshot.fileMtimeMs,
           recordHash,
-          reliabilityClass: 'raw_utterance'
+          reliabilityClass: 'raw_utterance',
+          lineStart,
+          lineEnd,
+          charStart: message.sourceRef?.charStart,
+          charEnd: message.sourceRef?.charEnd,
+          sourceOffset,
+          orderingConfidence
         }
       });
 
@@ -185,4 +230,30 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
 
     return records;
   }
+}
+
+function parseSourceRefMarker(line: string): ParsedSourceRefMarker | undefined {
+  const match = line.trim().match(/^<!--\s*agent-brain-source-ref:\s*([^]+?)\s*-->$/i);
+  if (!match?.[1]) return undefined;
+  try {
+    const parsed = JSON.parse(match[1].replace(/--&gt;/g, '-->')) as Record<string, unknown>;
+    return {
+      sourceOffset: numberField(parsed.sourceOffset),
+      lineStart: numberField(parsed.lineStart),
+      lineEnd: numberField(parsed.lineEnd),
+      charStart: numberField(parsed.charStart),
+      charEnd: numberField(parsed.charEnd),
+      orderingConfidence: orderingConfidenceField(parsed.orderingConfidence),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function orderingConfidenceField(value: unknown): 'high' | 'medium' | 'low' | undefined {
+  return value === 'high' || value === 'medium' || value === 'low' ? value : undefined;
 }

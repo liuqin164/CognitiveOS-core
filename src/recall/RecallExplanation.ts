@@ -1,5 +1,5 @@
 import type { MemoryKernel, MemoryKernelNavigationResult } from '../factory.js';
-import type { Neuron } from '../types/index.js';
+import type { MemoryEventContext, MemorySourceRef, Neuron } from '../types/index.js';
 import {
   isRecallableMemoryEvidence,
   recallGovernanceReasonsFor,
@@ -23,6 +23,7 @@ export interface RecallExplanationEvidence {
   topicPath?: string;
   tags: string[];
   source?: string;
+  sourceAnchor?: RecallExplanationSourceAnchor;
   activationPath?: string[];
   whyMatched?: string[];
 }
@@ -33,8 +34,16 @@ export interface RecallExplanationFilteredEvidence {
   projectId?: string;
   tags: string[];
   source?: string;
+  sourceAnchor?: RecallExplanationSourceAnchor;
   reason: 'agent_scope_mismatch' | 'over_context_limit' | 'status_suppressed';
   governanceReason?: RecallGovernanceSuppressionReason;
+}
+
+export interface RecallExplanationSourceAnchor {
+  eventId: string;
+  sourceEventType?: string;
+  sourceRefs: MemorySourceRef[];
+  context?: MemoryEventContext;
 }
 
 export interface RecallExplanation {
@@ -68,13 +77,13 @@ export function explainRecallWithKernel(
     const scoped = navigated.rawEvidence.filter((neuron) => isInAgentScope(neuron, options.agentId!));
     const included = scoped.slice(0, limit);
     const filteredEvidence = uniqueFilteredEvidence([
-      ...toNavigationFilteredEvidence(navigated),
+      ...toNavigationFilteredEvidence(navigated, kernel),
       ...navigated.rawEvidence
         .filter((neuron) => !isInAgentScope(neuron, options.agentId!))
-        .map((neuron) => toFilteredEvidence(neuron, 'agent_scope_mismatch')),
+        .map((neuron) => toFilteredEvidence(neuron, 'agent_scope_mismatch', undefined, kernel)),
       ...scoped
         .slice(limit)
-        .map((neuron) => toFilteredEvidence(neuron, 'over_context_limit')),
+        .map((neuron) => toFilteredEvidence(neuron, 'over_context_limit', undefined, kernel)),
     ]);
 
     if (included.length > 0) {
@@ -88,7 +97,7 @@ export function explainRecallWithKernel(
         pulseTrace: navigated.navigation?.pulse.trace,
         temporalTraversal: navigated.navigation?.branchSearch.temporalTraversal,
         runtime: navigated.navigation?.runtime,
-        evidence: included.map((neuron) => toEvidence(neuron, navigated, options.agentId)),
+        evidence: included.map((neuron) => toEvidence(neuron, navigated, options.agentId, kernel)),
         filteredEvidence,
       };
     }
@@ -115,18 +124,18 @@ export function explainRecallWithKernel(
       runtime: navigated.navigation?.runtime,
       evidence: fallbackScoped
         .slice(0, limit)
-        .map((neuron) => toEvidence(neuron, navigated, options.agentId)),
+        .map((neuron) => toEvidence(neuron, navigated, options.agentId, kernel)),
       filteredEvidence: uniqueFilteredEvidence([
         ...filteredEvidence,
         ...fallbackRawEvidence
           .filter((neuron) => !isRecallableMemoryEvidence(neuron))
-          .map((neuron) => toFilteredEvidence(neuron, 'status_suppressed')),
+          .map((neuron) => toFilteredEvidence(neuron, 'status_suppressed', undefined, kernel)),
         ...fallbackRecallable
           .filter((neuron) => !isInAgentScope(neuron, options.agentId!))
-          .map((neuron) => toFilteredEvidence(neuron, 'agent_scope_mismatch')),
+          .map((neuron) => toFilteredEvidence(neuron, 'agent_scope_mismatch', undefined, kernel)),
         ...fallbackScoped
           .slice(limit)
-          .map((neuron) => toFilteredEvidence(neuron, 'over_context_limit')),
+          .map((neuron) => toFilteredEvidence(neuron, 'over_context_limit', undefined, kernel)),
       ]),
     };
   }
@@ -140,10 +149,10 @@ export function explainRecallWithKernel(
   });
   const included = navigated.rawEvidence.slice(0, limit);
   const filteredEvidence = uniqueFilteredEvidence([
-    ...toNavigationFilteredEvidence(navigated),
+    ...toNavigationFilteredEvidence(navigated, kernel),
     ...navigated.rawEvidence
       .slice(limit)
-      .map((neuron) => toFilteredEvidence(neuron, 'over_context_limit')),
+      .map((neuron) => toFilteredEvidence(neuron, 'over_context_limit', undefined, kernel)),
   ]);
 
   return {
@@ -155,7 +164,7 @@ export function explainRecallWithKernel(
     pulseTrace: navigated.navigation?.pulse.trace,
     temporalTraversal: navigated.navigation?.branchSearch.temporalTraversal,
     runtime: navigated.navigation?.runtime,
-    evidence: included.map((neuron) => toEvidence(neuron, navigated)),
+    evidence: included.map((neuron) => toEvidence(neuron, navigated, undefined, kernel)),
     filteredEvidence,
   };
 }
@@ -171,6 +180,7 @@ function toEvidence(
   neuron: Neuron,
   result: MemoryKernelNavigationResult,
   agentId?: string,
+  kernel?: MemoryKernel,
 ): RecallExplanationEvidence {
   return {
     id: neuron.id,
@@ -179,6 +189,7 @@ function toEvidence(
     topicPath: neuron.metadata.topicPath,
     tags: neuron.metadata.tags || [],
     source: neuron.metadata.filePath || neuron.metadata.sourceEventId,
+    sourceAnchor: sourceAnchorFor(neuron, kernel),
     activationPath: activationPathFor(result),
     whyMatched: whyMatchedFor(neuron, result, agentId),
   };
@@ -188,6 +199,7 @@ function toFilteredEvidence(
   neuron: Neuron,
   reason: RecallExplanationFilteredEvidence['reason'],
   governanceReason?: RecallGovernanceSuppressionReason,
+  kernel?: MemoryKernel,
 ): RecallExplanationFilteredEvidence {
   return {
     id: neuron.id,
@@ -195,6 +207,7 @@ function toFilteredEvidence(
     projectId: neuron.metadata.projectId,
     tags: neuron.metadata.tags || [],
     source: neuron.metadata.filePath || neuron.metadata.sourceEventId,
+    sourceAnchor: sourceAnchorFor(neuron, kernel),
     reason,
     governanceReason: governanceReason ?? (
       reason === 'status_suppressed' ? recallSuppressionReasonFor(neuron) : undefined
@@ -202,10 +215,32 @@ function toFilteredEvidence(
   };
 }
 
-function toNavigationFilteredEvidence(result: MemoryKernelNavigationResult): RecallExplanationFilteredEvidence[] {
+function toNavigationFilteredEvidence(
+  result: MemoryKernelNavigationResult,
+  kernel?: MemoryKernel,
+): RecallExplanationFilteredEvidence[] {
   return (result.filteredEvidence || []).map((item) => (
-    toFilteredEvidence(item.neuron, item.reason, item.governanceReason)
+    toFilteredEvidence(item.neuron, item.reason, item.governanceReason, kernel)
   ));
+}
+
+function sourceAnchorFor(neuron: Neuron, kernel?: MemoryKernel): RecallExplanationSourceAnchor | undefined {
+  const eventId = neuron.metadata.sourceEventId;
+  if (!eventId || !kernel) return undefined;
+  const context = kernel.getEventContext(eventId, { before: 1, after: 1 }) || undefined;
+  if (!context) {
+    return { eventId, sourceRefs: [] };
+  }
+  const payload = context.event.payload as { sourceRefs?: unknown };
+  const sourceRefs = Array.isArray(payload.sourceRefs)
+    ? payload.sourceRefs.filter((item): item is MemorySourceRef => Boolean(item && typeof item === 'object'))
+    : [];
+  return {
+    eventId,
+    sourceEventType: context.event.eventType,
+    sourceRefs,
+    context,
+  };
 }
 
 function uniqueFilteredEvidence(items: RecallExplanationFilteredEvidence[]): RecallExplanationFilteredEvidence[] {

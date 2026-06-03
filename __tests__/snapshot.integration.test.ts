@@ -69,6 +69,55 @@ describe('MemorySnapshot v1.9.7', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test('snapshot export and import preserve chronological ledger replay order', async () => {
+    const dir = tempDir();
+    const sourceDb = join(dir, 'source-ledger.db');
+    const targetDb = join(dir, 'target-ledger.db');
+    const snapshotPath = join(dir, 'ledger.snap');
+    const source = createMemoryKernel({ dbPath: sourceDb });
+
+    source.recordRawEvent({
+      projectId: 'snapshot-ledger',
+      threadId: 'thread-snapshot',
+      sessionId: 'session-snapshot',
+      turnId: 'turn-1',
+      turnSeq: 1,
+      role: 'user',
+      content: 'first raw ledger event',
+      eventOrdinal: 1,
+      occurredAt: 1_700_000_000_000,
+    });
+    source.recordRawEvent({
+      projectId: 'snapshot-ledger',
+      threadId: 'thread-snapshot',
+      sessionId: 'session-snapshot',
+      turnId: 'turn-1',
+      turnSeq: 1,
+      role: 'assistant',
+      content: 'second raw ledger event',
+      eventOrdinal: 2,
+      occurredAt: 1_700_000_000_000,
+    });
+
+    const meta = await source.exportSnapshot(snapshotPath);
+    source.close();
+
+    await new SnapshotImporter({ expectedEmbeddingDimension: meta.header.embeddingDimension })
+      .import(snapshotPath, targetDb);
+    const restored = createMemoryKernel({ dbPath: targetDb });
+    const replay = restored.getThreadEvents('thread-snapshot');
+
+    expect(replay.map((event) => event.payload.text)).toEqual([
+      'first raw ledger event',
+      'second raw ledger event',
+    ]);
+    expect(replay.map((event) => event.threadSeq)).toEqual([1, 2]);
+    expect(replay.map((event) => event.eventOrdinal)).toEqual([1, 2]);
+    expect(replay.map((event) => event.globalSeq)).toEqual([1, 2]);
+    restored.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test('import rejects embedding dimension mismatches with expected and actual values', async () => {
     const dir = tempDir();
     const dbPath = join(dir, 'source.db');

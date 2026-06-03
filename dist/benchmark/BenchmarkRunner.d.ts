@@ -1,6 +1,7 @@
 import { EvalRunner, type EvalSuiteResult } from '../eval/runners/EvalRunner.js';
 import { type BenchmarkGroup, type BenchmarkGroupBaseline } from './BenchmarkRegistry.js';
 export interface BenchmarkBaselineResult {
+    metricKey: string;
     label: string;
     value: number;
     passed: boolean;

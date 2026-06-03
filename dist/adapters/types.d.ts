@@ -42,6 +42,12 @@ export interface SourceProvenance {
     fileMtimeMs: number;
     recordHash: string;
     reliabilityClass: SourceReliabilityClass;
+    lineStart?: number;
+    lineEnd?: number;
+    charStart?: number;
+    charEnd?: number;
+    sourceOffset?: number;
+    orderingConfidence?: 'high' | 'medium' | 'low';
 }
 export interface SourceAdapterRecord {
     recordId: string;

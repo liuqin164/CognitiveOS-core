@@ -18,6 +18,15 @@ export interface NormalizedMessage {
     role: 'user' | 'agent' | 'system' | 'narrator';
     text: string;
     timestamp: string;
+    source?: NormalizedMessageSource;
+}
+export interface NormalizedMessageSource {
+    sourceOffset: number;
+    lineStart?: number;
+    lineEnd?: number;
+    charStart?: number;
+    charEnd?: number;
+    orderingConfidence?: 'high' | 'medium' | 'low';
 }
 export interface CustomNormalizerOptions<TRecord> {
     family: NormalizationFamily;

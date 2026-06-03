@@ -37,6 +37,22 @@ export const BENCHMARK_GROUPS: BenchmarkGroup[] = [
     ]
   },
   {
+    name: 'memory_natural_emergence',
+    suiteName: 'memory_recall',
+    baselines: [
+      { metricKey: 'critical_memory_recall_rate', label: 'critical_recall', operator: '>=', threshold: 0.9, formatAs: 'percent' },
+      { metricKey: 'old_but_important_recall_rate', label: 'old_important_recall', operator: '>=', threshold: 0.85, formatAs: 'percent' },
+      { metricKey: 'stale_memory_leakage_rate', label: 'stale_leakage', operator: '=', threshold: 0, formatAs: 'percent' },
+      { metricKey: 'superseded_fact_leakage_rate', label: 'superseded_leakage', operator: '=', threshold: 0, formatAs: 'percent' },
+      { metricKey: 'suspect_memory_leakage_rate', label: 'suspect_leakage', operator: '=', threshold: 0, formatAs: 'percent' },
+      { metricKey: 'cross_project_leakage_rate', label: 'cross_project_leakage', operator: '=', threshold: 0, formatAs: 'percent' },
+      { metricKey: 'provenance_completeness_rate', label: 'provenance_complete', operator: '>=', threshold: 0.95, formatAs: 'percent' },
+      { metricKey: 'context_budget_efficiency', label: 'budget_efficiency', operator: '>=', threshold: 0.8, formatAs: 'percent' },
+      { metricKey: 'pulse_activation_useful_expansion_rate', label: 'pulse_useful_expansion', operator: '>=', threshold: 0.5, formatAs: 'percent' },
+      { metricKey: 'inhibition_correctness_rate', label: 'inhibition_correctness', operator: '>=', threshold: 0.95, formatAs: 'percent' }
+    ]
+  },
+  {
     name: 'fast_path',
     suiteName: 'fast_path',
     baselines: [

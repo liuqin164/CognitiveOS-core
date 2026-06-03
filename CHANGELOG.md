@@ -15,3 +15,7 @@
 - Added agent-facing OpenClaw and Hermes runbooks under `examples/*-backend/AGENTS.md`.
 - Added snapshot, vector backend, governance, PII redaction, and encryption release hardening.
 - Added a GitHub-only release checklist; `npm pack --dry-run` is used for artifact verification, not npm publishing.
+- Added Chronological Memory Ledger helpers for raw event replay, source anchors, sourceRefs, and recall explanation drill-down.
+- Added JSON/JSONL/CSV/TSV normalization source anchors and agent lifecycle facade methods for tool calls, tool observations, and task events.
+- Added `cogmem-normalize-transcript` for dry-run friendly transcript normalization into source-ref Markdown before import.
+- Added `memory_natural_emergence` benchmark baselines for critical recall, old-important recall, stale/superseded/suspect leakage, cross-project leakage, provenance completeness, context budget efficiency, pulse expansion, and inhibition correctness.

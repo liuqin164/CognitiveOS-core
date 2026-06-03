@@ -1,4 +1,5 @@
 import type { MemoryKernel, MemoryKernelNavigationResult } from '../factory.js';
+import type { MemoryEventContext, MemorySourceRef } from '../types/index.js';
 import { type RecallGovernanceSuppressionReason } from './RecallGovernance.js';
 export interface RecallExplanationOptions {
     query: string;
@@ -15,6 +16,7 @@ export interface RecallExplanationEvidence {
     topicPath?: string;
     tags: string[];
     source?: string;
+    sourceAnchor?: RecallExplanationSourceAnchor;
     activationPath?: string[];
     whyMatched?: string[];
 }
@@ -24,8 +26,15 @@ export interface RecallExplanationFilteredEvidence {
     projectId?: string;
     tags: string[];
     source?: string;
+    sourceAnchor?: RecallExplanationSourceAnchor;
     reason: 'agent_scope_mismatch' | 'over_context_limit' | 'status_suppressed';
     governanceReason?: RecallGovernanceSuppressionReason;
+}
+export interface RecallExplanationSourceAnchor {
+    eventId: string;
+    sourceEventType?: string;
+    sourceRefs: MemorySourceRef[];
+    context?: MemoryEventContext;
 }
 export interface RecallExplanation {
     query: string;

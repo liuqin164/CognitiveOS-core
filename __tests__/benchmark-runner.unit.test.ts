@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { BENCHMARK_GROUPS } from '../src/benchmark/BenchmarkRegistry.js';
 import { BenchmarkRunner } from '../src/benchmark/BenchmarkRunner.js';
 
 function createMockEvalRunner(overrides: Record<string, number> = {}) {
@@ -25,6 +26,15 @@ function createMockEvalRunner(overrides: Record<string, number> = {}) {
           dump_all_stale_leakage: 0,
           decision_consistency: 1,
           critical_memory_recall_rate: 1,
+          old_but_important_recall_rate: 1,
+          stale_memory_leakage_rate: 0,
+          superseded_fact_leakage_rate: 0,
+          suspect_memory_leakage_rate: 0,
+          cross_project_leakage_rate: 0,
+          provenance_completeness_rate: 1,
+          context_budget_efficiency: 0.95,
+          pulse_activation_useful_expansion_rate: 0.7,
+          inhibition_correctness_rate: 1,
           tool_call_usefulness_rate: 0.75,
           unnecessary_tool_call_rate: 0.1,
           policy_rejection_rate: 0.2,
@@ -64,6 +74,25 @@ describe('BenchmarkRunner', () => {
 
     expect(result.passed).toBe(true);
     expect(result.baselineResults[0]?.label).toBe('stale_leakage');
+  });
+
+  test('runGroup memory_natural_emergence covers recall, inhibition, leakage, provenance, and budget metrics', async () => {
+    const runner = new BenchmarkRunner(createMockEvalRunner() as never);
+    const result = await runner.runGroup('memory_natural_emergence');
+
+    expect(result.passed).toBe(true);
+    expect(result.baselineResults.map((item) => item.metricKey)).toEqual([
+      'critical_memory_recall_rate',
+      'old_but_important_recall_rate',
+      'stale_memory_leakage_rate',
+      'superseded_fact_leakage_rate',
+      'suspect_memory_leakage_rate',
+      'cross_project_leakage_rate',
+      'provenance_completeness_rate',
+      'context_budget_efficiency',
+      'pulse_activation_useful_expansion_rate',
+      'inhibition_correctness_rate',
+    ]);
   });
 
   test('runGroup long_horizon_task passes when resume rate is 100%', async () => {
@@ -136,7 +165,7 @@ describe('BenchmarkRunner', () => {
     const runner = new BenchmarkRunner(createMockEvalRunner() as never);
     const results = await runner.runAll();
 
-    expect(results).toHaveLength(10);
+    expect(results).toHaveLength(BENCHMARK_GROUPS.length);
   });
 
   test('runAll marks every result passed when all baselines pass', async () => {

@@ -12,6 +12,10 @@ import { ProposalLedger } from '../src/meta/ProposalLedger.js';
 import type { ObservationPattern, PolicyProposal } from '../src/meta/types.js';
 import { TraceStore } from '../src/observability/TraceStore.js';
 
+const MEMORY_RECALL_GROUP_NAMES = BENCHMARK_GROUPS
+  .filter((group) => group.suiteName === 'memory_recall')
+  .map((group) => group.name);
+
 class MockBenchmarkRunner extends BenchmarkRunner {
   readonly runCalls: string[] = [];
 
@@ -23,7 +27,7 @@ class MockBenchmarkRunner extends BenchmarkRunner {
     this.runCalls.push(groupName);
     const result = this.results[groupName];
     if (!result) {
-      throw new Error(`Missing mock result for ${groupName}`);
+      return makeGroupResult(groupName);
     }
     return result;
   }
@@ -64,6 +68,7 @@ function makeBaseline(groupName: string, label: string, overrides: Partial<Bench
   }
 
   return {
+    metricKey: overrides.metricKey ?? baseline.metricKey,
     label,
     value: overrides.value ?? baseline.threshold,
     passed: overrides.passed ?? true,
@@ -222,7 +227,7 @@ describe('v0.9 integration acceptance', () => {
     await new ProposalEvalRunner(harness.ledger, { runSuite: mock(async (name: EvalSuiteName) => makeSuiteResult(name)) } as never, runner)
       .evaluate(proposal.id);
 
-    expect(runner.runCalls).toEqual(['memory_governance', 'fast_path']);
+    expect(runner.runCalls).toEqual([...MEMORY_RECALL_GROUP_NAMES, 'fast_path']);
   });
 
   test('regression benchmark result produces passed=false and failed_eval status', async () => {

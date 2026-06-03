@@ -22,7 +22,7 @@ import { FactStore } from './store/FactStore.js';
 import { TemporalAdjacencyStore } from './store/TemporalAdjacencyStore.js';
 import { TopologyStore } from './store/TopologyStore.js';
 import type { IVectorStore, VectorBackend } from './store/IVectorStore.js';
-import type { IngestInput, Neuron } from './types/index.js';
+import type { IngestInput, MemoryEvent, MemoryEventCausalityType, MemoryEventContext, MemoryRawEventType, MemoryEventRole, Neuron } from './types/index.js';
 import { type ImportOptions, type ImportResult, type SnapshotMeta } from './snapshot/index.js';
 export interface MemoryKernelOptions {
     dbPath?: string;
@@ -50,6 +50,76 @@ export interface MemoryKernelNavigationOptions {
     limit?: number;
     startTime?: number;
     endTime?: number;
+}
+export interface RawMemoryEventInput {
+    projectId?: string;
+    workspaceId?: string;
+    threadId: string;
+    sessionId?: string;
+    turnId?: string;
+    turnSeq?: number;
+    role: MemoryEventRole;
+    rawEventType?: MemoryRawEventType;
+    content: string;
+    eventOrdinal?: number;
+    occurredAt?: number;
+    parentEventId?: string;
+    prevEventId?: string;
+    causalityType?: MemoryEventCausalityType;
+    sourceId?: string;
+    localDate?: string;
+    metadata?: Record<string, unknown>;
+}
+export interface ToolCallMemoryEventInput {
+    projectId?: string;
+    workspaceId?: string;
+    threadId: string;
+    sessionId?: string;
+    turnId?: string;
+    turnSeq?: number;
+    assistantEventId?: string;
+    toolCallId?: string;
+    toolName: string;
+    input?: unknown;
+    content?: string;
+    eventOrdinal?: number;
+    occurredAt?: number;
+    sourceId?: string;
+    metadata?: Record<string, unknown>;
+}
+export interface ToolResultMemoryEventInput {
+    projectId?: string;
+    workspaceId?: string;
+    threadId: string;
+    sessionId?: string;
+    turnId?: string;
+    turnSeq?: number;
+    toolCallEventId: string;
+    toolCallId?: string;
+    toolName: string;
+    output: string;
+    eventOrdinal?: number;
+    occurredAt?: number;
+    sourceId?: string;
+    metadata?: Record<string, unknown>;
+}
+export interface TaskMemoryEventInput {
+    projectId?: string;
+    workspaceId?: string;
+    threadId: string;
+    sessionId?: string;
+    turnId?: string;
+    turnSeq?: number;
+    parentEventId?: string;
+    taskId?: string;
+    title?: string;
+    content: string;
+    role?: MemoryEventRole;
+    rawEventType?: Extract<MemoryRawEventType, 'task_event' | 'action_result'>;
+    eventOrdinal?: number;
+    occurredAt?: number;
+    sourceId?: string;
+    metadata?: Record<string, unknown>;
 }
 export interface MemoryKernelNavigationResult {
     query: string;
@@ -141,7 +211,41 @@ export declare class MemoryKernel {
     }): Promise<Neuron>;
     recall(query: string, options?: BrainRecallOptions): import("./types/BrainRecallResult.js").BrainRecallResult;
     navigateMemory(query: string, options?: MemoryKernelNavigationOptions): MemoryKernelNavigationResult;
+    recordRawEvent(input: RawMemoryEventInput): MemoryEvent<{
+        text: string;
+        metadata?: Record<string, unknown>;
+    }>;
+    recordToolCall(input: ToolCallMemoryEventInput): MemoryEvent<{
+        text: string;
+        toolCallId?: string;
+        toolName: string;
+        input?: unknown;
+        metadata?: Record<string, unknown>;
+    }>;
+    recordToolResult(input: ToolResultMemoryEventInput): MemoryEvent<{
+        text: string;
+        toolCallId?: string;
+        toolName: string;
+        output: string;
+        metadata?: Record<string, unknown>;
+    }>;
+    recordTaskEvent(input: TaskMemoryEventInput): MemoryEvent<{
+        text: string;
+        taskId?: string;
+        title?: string;
+        metadata?: Record<string, unknown>;
+    }>;
     consolidate(options?: MemoryKernelConsolidationOptions): Promise<OfflineConsolidationOutput>;
+    getThreadEvents(threadId: string, options?: {
+        projectId?: string;
+        sessionId?: string;
+        localDate?: string;
+        limit?: number;
+    }): MemoryEvent[];
+    getEventContext(eventId: string, options?: {
+        before?: number;
+        after?: number;
+    }): MemoryEventContext | null;
     exportSnapshot(outputPath: string): Promise<SnapshotMeta>;
     importSnapshot(snapshotPath: string, opts?: ImportOptions): Promise<ImportResult>;
     getHealthStatus(): {

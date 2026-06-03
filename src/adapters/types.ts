@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { basename } from 'node:path';
-import type { IngestInput, SourceType } from '../types/index.js';
+import type { IngestInput, MemorySourceRef, SourceType } from '../types/index.js';
 
 export type SourceAdapterKind =
   | 'conversation_markdown'
@@ -67,6 +67,12 @@ export interface SourceProvenance {
   fileMtimeMs: number;
   recordHash: string;
   reliabilityClass: SourceReliabilityClass;
+  lineStart?: number;
+  lineEnd?: number;
+  charStart?: number;
+  charEnd?: number;
+  sourceOffset?: number;
+  orderingConfidence?: 'high' | 'medium' | 'low';
 }
 
 export interface SourceAdapterRecord {
@@ -250,6 +256,7 @@ export function resolveTimestampWithContext(
 
 export function buildEpisodeEnvelope(source: SourceDefinition, record: SourceAdapterRecord): BatchEpisodeEnvelope {
   const type = record.kind === 'raw_utterance' || record.kind === 'conversation_message' ? 'chat' : 'doc';
+  const sourceRef = buildSourceRef(source, record);
   return {
     record,
     ingestInput: {
@@ -260,6 +267,7 @@ export function buildEpisodeEnvelope(source: SourceDefinition, record: SourceAda
       createdAt: record.timestamp,
       updatedAt: record.timestamp,
       sourceType: record.sourceTypeHint,
+      sourceRefs: [sourceRef],
       tags: Array.from(new Set([
         ...(source.tags || []),
         ...record.tags,
@@ -270,4 +278,41 @@ export function buildEpisodeEnvelope(source: SourceDefinition, record: SourceAda
       ]))
     }
   };
+}
+
+function buildSourceRef(source: SourceDefinition, record: SourceAdapterRecord): MemorySourceRef {
+  const sourceOffset = numberField(record.metadata?.sourceOffset) ?? record.provenance.sourceOffset;
+  const threadSeq = numberField(record.metadata?.threadSeq) ?? sourceOffset;
+  return {
+    sourceId: record.provenance.sourceId,
+    sourcePath: record.provenance.sourcePath,
+    sourceType: record.provenance.sourceType,
+    recordId: record.recordId,
+    contentHash: record.provenance.recordHash,
+    threadId: stringField(record.metadata?.threadId) ?? stringField(source.metadata?.threadId) ?? source.sourceId,
+    sessionId: stringField(record.metadata?.sessionId) ?? stringField(source.metadata?.sessionId),
+    turnId: record.turnId,
+    role: record.role === 'agent' ? 'assistant' : record.role,
+    threadSeq,
+    turnSeq: numberField(record.metadata?.turnSeq) ?? numberField(record.metadata?.turnIndex),
+    eventOrdinal: numberField(record.metadata?.eventOrdinal),
+    sourceOffset,
+    lineStart: numberField(record.metadata?.lineStart) ?? numberField(record.metadata?.lineNumber) ?? record.provenance.lineStart,
+    lineEnd: numberField(record.metadata?.lineEnd) ?? numberField(record.metadata?.lineNumber) ?? record.provenance.lineEnd,
+    charStart: numberField(record.metadata?.charStart) ?? record.provenance.charStart,
+    charEnd: numberField(record.metadata?.charEnd) ?? record.provenance.charEnd,
+    orderingConfidence: (
+      stringField(record.metadata?.orderingConfidence)
+      ?? record.provenance.orderingConfidence
+      ?? 'low'
+    ) as MemorySourceRef['orderingConfidence'],
+  };
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }

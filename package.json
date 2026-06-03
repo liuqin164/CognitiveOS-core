@@ -23,6 +23,7 @@
     "cogmem-mcp": "dist/bin/mcp.js",
     "cogmem-import-openclaw": "dist/bin/import-openclaw.js",
     "cogmem-import-hermes": "dist/bin/import-hermes.js",
+    "cogmem-normalize-transcript": "dist/bin/normalize-transcript.js",
     "cogmem-snapshot": "dist/bin/snapshot.js",
     "cogmem-re-embed": "dist/bin/re-embed.js",
     "cogmem-migrate-vectors": "dist/bin/migrate-vectors.js"
@@ -52,6 +53,9 @@
     "dist/**/*.d.ts",
     "examples/**/*.md",
     "README.md",
+    "MEMORY_MODEL.md",
+    "RECALL_EXPLAINABILITY.md",
+    "BENCHMARKS.md",
     "CHANGELOG.md",
     "CONCURRENT_ACCESS.md",
     "CONTRIBUTING.md",
