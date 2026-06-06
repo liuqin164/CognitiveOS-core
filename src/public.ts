@@ -29,6 +29,7 @@ export type {
   MemoryKernelNavigationOptions,
   MemoryKernelNavigationResult,
   MemoryKernelOptions,
+  RawEventSearchOptions,
   RawMemoryEventInput,
   TaskMemoryEventInput,
   ToolCallMemoryEventInput,
@@ -64,7 +65,10 @@ export {
   type AgentTaskEventMemory,
   type AgentToolCallMemory,
   type AgentToolObservationMemory,
+  type AgentTurnCompileReason,
+  type AgentTurnIngestMode,
   type AgentTurnMemory,
+  type AgentTurnMemoryResult,
 } from './agent/index.js';
 
 /**
@@ -232,6 +236,7 @@ export type {
 } from './recall/RecallExplanation.js';
 export { callCogmemMcpTool, listCogmemMcpTools } from './mcp/CoreMcpTools.js';
 export type { CogmemMcpCallResult, CogmemMcpRuntime, CogmemMcpTool } from './mcp/CoreMcpTools.js';
+export type { DreamBacklogStatus } from './store/DreamLedgerStore.js';
 
 // ─── @experimental ───────────────────────────────────────────────────────────
 

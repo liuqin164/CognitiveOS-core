@@ -96,6 +96,7 @@ await memory.rememberTurn({
   sessionId: 'session-1',
   userText: 'Use sqlite-vec for the public release.',
   assistantText: 'Stored.',
+  ingestMode: 'selective_compile',
 });
 
 const result = memory.recall({
@@ -111,13 +112,26 @@ console.log(result.temporalTraversal?.labels);
 console.log(result.items);
 ```
 
-`KernelAgentMemoryBackend.recall()` routes through universe navigation first. That means core activates related entities, temporal branches, and graph neighbors, assembles a narrative summary, and returns context that is already prepared for the agent. `MemoryKernel.recall()` remains available as the lower-level BrainRecall path; the backend uses it only as a fallback when universe navigation yields no scoped evidence.
+`KernelAgentMemoryBackend.recall()` routes through universe navigation first. That means core activates related entities, temporal branches, and graph neighbors, assembles a narrative summary, and returns context that is already prepared for the agent. `MemoryKernel.recall()` remains available as the lower-level BrainRecall path; the backend uses it only as a fallback when universe navigation yields no scoped evidence. If both compiled recall paths miss, the backend can use bounded raw ledger FTS as `raw_ledger_fallback`; this returns only matching raw snippets within the evidence limit and does not dump whole threads into the prompt.
+
+Turn recording supports four modes:
+
+- `immediate_compile`: legacy behavior; records raw events and immediately creates compiled vector-backed memory.
+- `selective_compile`: records every raw turn but only compiles durable signals such as explicit preferences, constraints, corrections, decisions, goals, failures, lessons, and procedures.
+- `raw_archive_only`: records only raw ledger events for replay/audit.
+- `raw_then_dream`: records raw events and exposes dream backlog status for later consolidation.
+
+For OpenClaw/Hermes automatic turn recording with high-dimensional Qwen embeddings, prefer `selective_compile` or `raw_then_dream`. This keeps full raw evidence while avoiding a high-dimensional vector for every sentence.
 
 ## Memory Model
 
 Core separates raw chronological evidence from ranked recall. The Chronological Memory Ledger records ordered raw events for replay and audit; governed recall ranks memories by relevance, importance, confidence, recency, scope, pulse activation, and inhibition.
 
 Use `MemoryKernel.getThreadEvents(threadId)` to replay raw events in ledger order and `MemoryKernel.getEventContext(eventId, { before, after })` to inspect surrounding source context. Use `KernelAgentMemoryBackend.recall()` for current agent context. Do not use replay as a prompt dump.
+
+Use `MemoryKernel.searchRawEvents(query, { projectId })` when you need to find original raw evidence that may not have compiled memory or a hot vector. This raw FTS/metadata path is for source discovery and cold recall; it is not the default agent context ranking path.
+
+Vector pruning is not memory pruning. `cogmem compact` deletes only eligible vector blobs from `vector_index`; it does not delete raw ledger events, sourceRefs, chronological ordering, or tool-call parent/child links.
 
 Semantic memories can point back to raw events through `sourceRefs`; `explainRecallWithKernel()` includes `sourceAnchor` when provenance is available. See `MEMORY_MODEL.md` and `RECALL_EXPLAINABILITY.md`.
 
@@ -359,9 +373,10 @@ See `examples/hermes-backend/README.md` and `examples/hermes-backend/SKILL.md`.
 ```bash
 cogmem                   # unified command dispatcher: cogmem doctor, cogmem connect, cogmem update
 cogmem-init              # interactive setup
-cogmem-doctor            # validates config.toml and opens the kernel; --fix repairs OpenClaw auto wiring
+cogmem-doctor            # validates config.toml and opens the kernel; --storage reports vector/raw ledger storage pressure; --fix repairs OpenClaw auto wiring
 cogmem-connect           # install OpenClaw/Hermes agent-facing SKILL.md files; openclaw --auto installs runtime hooks
 cogmem-update            # package update helper; equivalent to cogmem update
+cogmem-compact           # dry-run or apply vector-only compaction; defaults to dry-run unless --apply is passed
 cogmem-explain-recall    # explain pulse/temporal/narrative recall decisions
 cogmem-mcp               # stdio MCP server exposing cogmem memory tools
 cogmem-import-openclaw   # migrate OpenClaw workspace memory into core
@@ -371,6 +386,16 @@ cogmem-snapshot          # export/import snapshot helper
 cogmem-re-embed          # re-embedding helper
 cogmem-migrate-vectors   # vector backend migration helper; uses config vector_dimension unless --dimension is passed
 ```
+
+Storage inspection and safe vector compaction:
+
+```bash
+./node_modules/.bin/cogmem-doctor --storage
+./node_modules/.bin/cogmem compact --dry-run --status archived,suspect,cold --json
+./node_modules/.bin/cogmem compact --apply --status archived,suspect
+```
+
+Run `--dry-run` first. Use `--apply` only after snapshotting the database and ensuring no live writer is active.
 
 Benchmark groups are documented in `BENCHMARKS.md`; `memory_natural_emergence` tracks recall, inhibition, leakage, provenance, budget, and pulse expansion metrics.
 

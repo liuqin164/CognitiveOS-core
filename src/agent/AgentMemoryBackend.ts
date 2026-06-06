@@ -2,6 +2,19 @@ import type { MemoryKernel, MemoryKernelNavigationResult } from '../factory.js';
 import { isRecallableMemoryEvidence } from '../recall/RecallGovernance.js';
 import type { MemoryEvent, MemorySourceRef } from '../types/index.js';
 
+export type AgentTurnIngestMode =
+  | 'immediate_compile'
+  | 'selective_compile'
+  | 'raw_archive_only'
+  | 'raw_then_dream';
+
+export type AgentTurnCompileReason =
+  | 'immediate_compile'
+  | 'durable_signal_detected'
+  | 'low_signal_turn'
+  | 'raw_archive_only'
+  | 'raw_then_dream';
+
 export interface AgentTurnMemory {
   agentId: string;
   projectId: string;
@@ -13,7 +26,16 @@ export interface AgentTurnMemory {
   userText: string;
   assistantText?: string;
   timestamp?: number;
+  ingestMode?: AgentTurnIngestMode;
   metadata?: Record<string, unknown>;
+}
+
+export interface AgentTurnMemoryResult {
+  mode: AgentTurnIngestMode;
+  reason: AgentTurnCompileReason;
+  compiled: boolean;
+  rawEventIds: string[];
+  compiledNeuronId?: string;
 }
 
 export interface AgentRecallQuery {
@@ -86,7 +108,7 @@ export interface AgentRecallItem {
 }
 
 export interface AgentRecallResult {
-  recallMode: MemoryKernelNavigationResult['recallMode'];
+  recallMode: MemoryKernelNavigationResult['recallMode'] | 'raw_ledger_fallback';
   items: AgentRecallItem[];
   narrative?: NonNullable<MemoryKernelNavigationResult['navigation']>['narrative'];
   pulseTrace?: NonNullable<MemoryKernelNavigationResult['navigation']>['pulse']['trace'];
@@ -99,11 +121,16 @@ export class KernelAgentMemoryBackend {
   constructor(private readonly kernel: MemoryKernel) {}
 
   async rememberTurn(turn: AgentTurnMemory): Promise<void> {
+    await this.rememberTurnWithResult(turn);
+  }
+
+  async rememberTurnWithResult(turn: AgentTurnMemory): Promise<AgentTurnMemoryResult> {
     const occurredAt = turn.timestamp ?? Date.now();
     const threadId = turn.threadId || turn.sessionId;
     const turnSeq = turn.turnSeq ?? this.kernel.eventStore.getNextTurnSeq(threadId);
     const turnId = turn.turnId || `${turn.agentId}:${turn.sessionId}:${turnSeq}:${occurredAt}`;
     const sourceId = `${turn.agentId}:${turn.sessionId}`;
+    const mode = turn.ingestMode ?? 'immediate_compile';
     const userEvent = this.kernel.recordRawEvent({
       projectId: turn.projectId,
       workspaceId: turn.workspaceId,
@@ -140,6 +167,7 @@ export class KernelAgentMemoryBackend {
     if (assistantEvent) {
       this.kernel.eventStore.updateNextEventId(userEvent.eventId, assistantEvent.eventId);
     }
+
     const sourceRefs = [userEvent, assistantEvent].filter(Boolean).map((event) => ({
       eventId: event!.eventId,
       eventType: 'message',
@@ -163,7 +191,18 @@ export class KernelAgentMemoryBackend {
       turn.assistantText ? `Agent: ${turn.assistantText}` : '',
     ].filter(Boolean).join('\n');
 
-    await this.kernel.ingest({
+    const decision = this.shouldCompileTurn(mode, content);
+    const rawEventIds = [userEvent, assistantEvent].filter(Boolean).map((event) => event!.eventId);
+    if (!decision.compile) {
+      return {
+        mode,
+        reason: decision.reason,
+        compiled: false,
+        rawEventIds,
+      };
+    }
+
+    const neuron = await this.kernel.ingest({
       content,
       projectId: turn.projectId,
       createdAt: occurredAt,
@@ -174,6 +213,14 @@ export class KernelAgentMemoryBackend {
         `session:${turn.sessionId}`,
       ],
     });
+
+    return {
+      mode,
+      reason: decision.reason,
+      compiled: true,
+      rawEventIds,
+      compiledNeuronId: neuron.id,
+    };
   }
 
   async ingestToolCall(call: AgentToolCallMemory): Promise<MemoryEvent> {
@@ -300,12 +347,35 @@ export class KernelAgentMemoryBackend {
       projectId: query.projectId,
       limit: retrievalLimit,
     });
+    const fallbackItems = this.filterAgentEvidence(fallback.rawEvidence, query.agentId)
+      .slice(0, limit)
+      .map((neuron) => this.toAgentRecallItem(neuron));
+    if (fallbackItems.length > 0) {
+      return {
+        recallMode: 'brain_recall_fallback',
+        items: fallbackItems,
+        narrative: result.navigation?.narrative,
+        pulseTrace: result.navigation?.pulse.trace,
+        temporalTraversal: result.navigation?.branchSearch.temporalTraversal,
+        runtime: result.navigation?.runtime,
+        fallbackUsed: true,
+      };
+    }
+
+    const rawEvents = this.kernel.searchRawEvents(query.query, {
+      projectId: query.projectId,
+      startTime: query.startTime,
+      endTime: query.endTime,
+      limit: Math.max(limit * 2, 10),
+    });
+    const rawItems = rawEvents
+      .filter((event) => this.isAgentRawEvent(event, query.agentId))
+      .slice(0, limit)
+      .map((event) => this.toAgentRawRecallItem(event));
 
     return {
-      recallMode: 'brain_recall_fallback',
-      items: this.filterAgentEvidence(fallback.rawEvidence, query.agentId)
-        .slice(0, limit)
-        .map((neuron) => this.toAgentRecallItem(neuron)),
+      recallMode: 'raw_ledger_fallback',
+      items: rawItems,
       narrative: result.navigation?.narrative,
       pulseTrace: result.navigation?.pulse.trace,
       temporalTraversal: result.navigation?.branchSearch.temporalTraversal,
@@ -338,6 +408,28 @@ export class KernelAgentMemoryBackend {
     };
   }
 
+  private isAgentRawEvent(event: MemoryEvent, agentId: string): boolean {
+    if (!event.sourceId) return true;
+    return event.sourceId === agentId || event.sourceId.startsWith(`${agentId}:`);
+  }
+
+  private toAgentRawRecallItem(event: MemoryEvent): AgentRecallItem {
+    const payload = event.payload as { text?: unknown };
+    const tags = [
+      'raw_ledger',
+      event.rawEventType ? `raw:${event.rawEventType}` : '',
+      event.role ? `role:${event.role}` : '',
+      event.sessionId ? `session:${event.sessionId}` : '',
+    ].filter(Boolean);
+    return {
+      id: event.eventId,
+      text: typeof payload.text === 'string' ? payload.text : JSON.stringify(event.payload),
+      projectId: event.projectId,
+      tags,
+      source: event.eventId,
+    };
+  }
+
   private toSourceRef(event: MemoryEvent, sourceId: string): MemorySourceRef {
     return {
       eventId: event.eventId,
@@ -357,5 +449,60 @@ export class KernelAgentMemoryBackend {
       causalityType: event.causalityType,
       orderingConfidence: event.orderingConfidence,
     };
+  }
+
+  private shouldCompileTurn(
+    mode: AgentTurnIngestMode,
+    content: string,
+  ): { compile: boolean; reason: AgentTurnCompileReason } {
+    if (mode === 'immediate_compile') return { compile: true, reason: 'immediate_compile' };
+    if (mode === 'raw_archive_only') return { compile: false, reason: 'raw_archive_only' };
+    if (mode === 'raw_then_dream') return { compile: false, reason: 'raw_then_dream' };
+    if (this.hasDurableTurnSignal(content)) return { compile: true, reason: 'durable_signal_detected' };
+    return { compile: false, reason: 'low_signal_turn' };
+  }
+
+  private hasDurableTurnSignal(content: string): boolean {
+    const normalized = content.toLowerCase();
+    const durableSignals = [
+      /重要/,
+      /记住/,
+      /以后/,
+      /长期/,
+      /偏好/,
+      /不要/,
+      /禁止/,
+      /必须/,
+      /约束/,
+      /边界/,
+      /目标/,
+      /纠正/,
+      /更正/,
+      /推翻/,
+      /失败/,
+      /成功/,
+      /教训/,
+      /流程/,
+      /决定/,
+      /架构/,
+      /原则/,
+      /preference/,
+      /remember/,
+      /important/,
+      /always/,
+      /never/,
+      /must/,
+      /do not/,
+      /constraint/,
+      /goal/,
+      /correction/,
+      /supersede/,
+      /failure/,
+      /lesson/,
+      /decision/,
+      /architecture/,
+      /boundary/,
+    ];
+    return durableSignals.some((signal) => signal.test(normalized));
   }
 }

@@ -16,6 +16,7 @@ import { type EnvLike } from './config/CogmemConfig.js';
 import { ModelRegistry } from './models/ModelRegistry.js';
 import type { Embedder } from './store/Embedder.js';
 import { CognitiveGraphStore } from './store/CognitiveGraphStore.js';
+import { DreamLedgerStore, type DreamBacklogStatus } from './store/DreamLedgerStore.js';
 import { EntityStore } from './store/EntityStore.js';
 import { EventStore } from './store/EventStore.js';
 import { FactStore } from './store/FactStore.js';
@@ -50,6 +51,16 @@ export interface MemoryKernelNavigationOptions {
     limit?: number;
     startTime?: number;
     endTime?: number;
+}
+export interface RawEventSearchOptions {
+    projectId?: string;
+    workspaceId?: string;
+    threadId?: string;
+    sessionId?: string;
+    localDate?: string;
+    startTime?: number;
+    endTime?: number;
+    limit?: number;
 }
 export interface RawMemoryEventInput {
     projectId?: string;
@@ -169,6 +180,7 @@ export declare class MemoryKernel {
     readonly cognitiveGraphStore: CognitiveGraphStore;
     readonly temporalAdjacencyStore: TemporalAdjacencyStore;
     readonly neuronEmbeddingStore: NeuronEmbeddingStore;
+    readonly dreamLedgerStore: DreamLedgerStore;
     readonly pipelineMetrics: PipelineMetrics;
     private readonly dbPath;
     private readonly embedder;
@@ -246,6 +258,9 @@ export declare class MemoryKernel {
         before?: number;
         after?: number;
     }): MemoryEventContext | null;
+    searchRawEvents(query: string, options?: RawEventSearchOptions): MemoryEvent[];
+    getDreamBacklogStatus(projectId?: string): DreamBacklogStatus;
+    markDreamed(projectId: string | undefined, globalSeq: number, dreamedAt?: number): DreamBacklogStatus;
     exportSnapshot(outputPath: string): Promise<SnapshotMeta>;
     importSnapshot(snapshotPath: string, opts?: ImportOptions): Promise<ImportResult>;
     getHealthStatus(): {

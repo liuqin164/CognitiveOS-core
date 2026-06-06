@@ -37,6 +37,10 @@ export interface CogmemMcpRuntime {
 
 const STRING_SCHEMA = { type: 'string' };
 const NUMBER_SCHEMA = { type: 'number' };
+const TURN_INGEST_MODE_SCHEMA = {
+  type: 'string',
+  enum: ['immediate_compile', 'selective_compile', 'raw_archive_only', 'raw_then_dream'],
+};
 
 export function listCogmemMcpTools(): CogmemMcpTool[] {
   return [
@@ -51,6 +55,7 @@ export function listCogmemMcpTools(): CogmemMcpTool[] {
           sessionId: STRING_SCHEMA,
           userText: STRING_SCHEMA,
           assistantText: STRING_SCHEMA,
+          ingestMode: TURN_INGEST_MODE_SCHEMA,
           timestamp: NUMBER_SCHEMA,
         },
         required: ['agentId', 'projectId', 'sessionId', 'userText'],
@@ -136,16 +141,17 @@ export async function callCogmemMcpTool(
 
 async function rememberTurn(kernel: MemoryKernel, input: Record<string, unknown>): Promise<CogmemMcpCallResult> {
   const memory = new KernelAgentMemoryBackend(kernel);
-  await memory.rememberTurn({
+  const result = await memory.rememberTurnWithResult({
     agentId: requiredString(input.agentId, 'agentId'),
     projectId: requiredString(input.projectId, 'projectId'),
     sessionId: requiredString(input.sessionId, 'sessionId'),
     userText: requiredString(input.userText, 'userText'),
     assistantText: optionalString(input.assistantText),
+    ingestMode: optionalTurnIngestMode(input.ingestMode),
     timestamp: optionalNumber(input.timestamp),
   });
 
-  return jsonResult({ ok: true });
+  return jsonResult({ ok: true, ...result });
 }
 
 function recall(
@@ -213,6 +219,19 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalTurnIngestMode(value: unknown): 'immediate_compile' | 'selective_compile' | 'raw_archive_only' | 'raw_then_dream' | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (
+    value === 'immediate_compile'
+    || value === 'selective_compile'
+    || value === 'raw_archive_only'
+    || value === 'raw_then_dream'
+  ) {
+    return value;
+  }
+  throw new Error('ingestMode must be one of immediate_compile, selective_compile, raw_archive_only, raw_then_dream');
 }
 
 function optionalTime(value: unknown, field: string): number | undefined {

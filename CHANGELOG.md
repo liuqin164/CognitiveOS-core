@@ -20,3 +20,8 @@
 - Added `cogmem-normalize-transcript` for dry-run friendly transcript normalization into source-ref Markdown before import.
 - Added `memory_natural_emergence` benchmark baselines for critical recall, old-important recall, stale/superseded/suspect leakage, cross-project leakage, provenance completeness, context budget efficiency, pulse expansion, and inhibition correctness.
 - Added the unified `cogmem` CLI, `cogmem update`, `cogmem-connect openclaw --auto`, and `cogmem-doctor --fix --agent openclaw` so OpenClaw can install/repair an automatic recall and turn-recording wrapper without hand-editing runtime files.
+- Added selective agent turn ingestion modes so OpenClaw/Hermes can preserve raw ledger evidence without embedding every conversation turn.
+- Added raw ledger FTS search through `MemoryKernel.searchRawEvents()` for source discovery and cold recall without requiring per-sentence vectors.
+- Added bounded agent-facing `raw_ledger_fallback` after governed compiled recall misses.
+- Added dream backlog status helpers for `raw_then_dream` coverage tracking.
+- Added `cogmem compact` and `cogmem-doctor --storage` for vector-only storage diagnostics and safe compaction.

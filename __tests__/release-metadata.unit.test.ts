@@ -66,6 +66,7 @@ describe('core release metadata', () => {
     const manifest = packageJson();
     const expectedBins = [
       'cogmem',
+      'cogmem-compact',
       'cogmem-connect',
       'cogmem-doctor',
       'cogmem-explain-recall',

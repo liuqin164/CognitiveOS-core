@@ -74,6 +74,72 @@ test('EventStore replays same-timestamp thread events by threadSeq and eventOrdi
   store.close();
 });
 
+test('EventStore raw ledger FTS finds original events without compiled memory vectors', () => {
+  const store = new EventStore(tempDbPath('cogmem-ledger-fts-'));
+
+  const first = store.append({
+    streamId: 'thread-a',
+    streamType: 'thread',
+    eventType: 'RAW_EVENT_RECORDED',
+    projectId: 'project-a',
+    threadId: 'thread-a',
+    sessionId: 'session-a',
+    threadSeq: 1,
+    eventOrdinal: 1,
+    role: 'user',
+    occurredAt: 1_700_000_000_000,
+    payload: { text: 'Important Obsidian boundary: keep this an agent memory kernel.' },
+  });
+  store.append({
+    streamId: 'thread-b',
+    streamType: 'thread',
+    eventType: 'RAW_EVENT_RECORDED',
+    projectId: 'project-b',
+    threadId: 'thread-b',
+    sessionId: 'session-b',
+    threadSeq: 1,
+    eventOrdinal: 1,
+    role: 'user',
+    occurredAt: 1_700_000_000_000,
+    payload: { text: 'Other project also mentions Obsidian but must stay isolated.' },
+  });
+
+  const matches = store.searchRawEvents('Obsidian boundary', { projectId: 'project-a', limit: 5 });
+
+  expect(matches.map((event) => event.eventId)).toEqual([first.eventId]);
+  expect(matches[0].payload.text).toContain('agent memory kernel');
+  expect(matches[0].threadSeq).toBe(1);
+  expect(matches[0].eventOrdinal).toBe(1);
+
+  store.close();
+});
+
+test('MemoryKernel exposes project-scoped raw ledger search through the public facade', async () => {
+  const kernel = createMemoryKernel({ dbPath: tempDbPath('cogmem-ledger-kernel-fts-'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'project-a',
+    sessionId: 'session-a',
+    userText: 'Raw ledger keyword anchor says vector pruning is not memory pruning.',
+    assistantText: 'Stored in raw ledger only.',
+    ingestMode: 'raw_archive_only',
+    timestamp: 1_700_000_000_000,
+  });
+
+  expect(kernel.vectorStore.getCurrentCount()).toBe(0);
+  const matches = kernel.searchRawEvents('vector pruning memory pruning', {
+    projectId: 'project-a',
+    limit: 5,
+  });
+
+  expect(matches).toHaveLength(1);
+  expect(matches[0].payload.text).toContain('vector pruning is not memory pruning');
+
+  kernel.close();
+});
+
 test('KernelAgentMemoryBackend records raw turn events with parent and prev links before semantic ingest', async () => {
   const kernel = createMemoryKernel({ dbPath: tempDbPath('cogmem-ledger-agent-'), vectorBackend: 'sqlite-vec' });
   const backend = new KernelAgentMemoryBackend(kernel);

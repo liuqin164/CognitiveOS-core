@@ -32,9 +32,31 @@ test('core MCP tool list exposes recall, write, and explain tools', () => {
   ]);
   const recall = tools.find((tool) => tool.name === 'cogmem_recall');
   const explain = tools.find((tool) => tool.name === 'cogmem_explain_recall');
+  const remember = tools.find((tool) => tool.name === 'cogmem_remember_turn');
+  expect(remember?.inputSchema.properties.ingestMode).toBeTruthy();
   expect(recall?.description).toContain('governed');
   expect(explain?.description).toContain('filteredEvidence');
   expect(explain?.description).toContain('governanceReason');
+});
+
+test('core MCP remember turn supports raw-only mode without creating vectors', async () => {
+  const kernel = makeKernel();
+
+  const write = await callCogmemMcpTool('cogmem_remember_turn', {
+    agentId: 'openclaw',
+    projectId: 'mcp-raw-only',
+    sessionId: 'session-raw',
+    userText: '在吗',
+    assistantText: '在。',
+    ingestMode: 'raw_archive_only',
+  }, { kernel });
+
+  expect(write.isError).toBeFalsy();
+  expect(write.structuredContent?.ok).toBe(true);
+  expect(write.structuredContent?.compiled).toBe(false);
+  expect(write.structuredContent?.reason).toBe('raw_archive_only');
+  expect(kernel.eventStore.getEventCount()).toBe(2);
+  expect(kernel.vectorStore.getCurrentCount()).toBe(0);
 });
 
 test('core MCP tools can remember a turn and recall prepared narrative context', async () => {

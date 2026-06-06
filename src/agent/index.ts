@@ -6,5 +6,8 @@ export {
   type AgentTaskEventMemory,
   type AgentToolCallMemory,
   type AgentToolObservationMemory,
+  type AgentTurnCompileReason,
+  type AgentTurnIngestMode,
   type AgentTurnMemory,
+  type AgentTurnMemoryResult,
 } from './AgentMemoryBackend.js';

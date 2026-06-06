@@ -8,11 +8,15 @@ It is not a vector RAG store, a knowledge-base application, a wiki, an Obsidian 
 
 - Raw Archive: append-only raw experience events such as user messages, assistant messages, tool observations, task events, imports, and corrections.
 - Chronological Memory Ledger: the ordered event ledger used for audit, replay, source anchoring, and migration consistency.
+- Raw Search Index: FTS/metadata search over raw ledger text for exact source discovery without requiring every event to keep a high-dimensional vector.
 - Compiled Memory: write-time facts, beliefs, events, summaries, graph links, and governance state derived from raw evidence.
+- Dream Backlog: observable consolidation coverage over raw events so `raw_then_dream` does not silently become unprocessed log accumulation.
 - Active Core: a very small current operating context maintained by the host agent or adapter, not all history.
 - Associative Graph: pulse-activated local graph, topic, entity, temporal, and cognitive adjacency candidates.
 - Recall Pack / ContextPack: the limited governed context returned for the current agent task.
 - Filtered Evidence: same-project candidates that were considered but suppressed by status, trust, scope, or budget.
+
+Vector pruning is not memory pruning. Compaction may delete hot vector blobs, temporary embeddings, or stale indexes, but it must not delete raw ledger events, chronological order, sourceRefs, content hashes, or tool-call parent/child links unless the user explicitly requests a privacy deletion.
 
 ## Chronological Memory Ledger
 
@@ -32,11 +36,12 @@ The ledger uses optional, backward-compatible fields:
 - `parentEventId`, `prevEventId`, `nextEventId`, `causalityType`
 - `rawEventType`, `orderingConfidence`
 
-Use `MemoryKernel.getThreadEvents(threadId)` for replay and `MemoryKernel.getEventContext(eventId, { before, after })` for source drill-down.
+Use `MemoryKernel.getThreadEvents(threadId)` for replay, `MemoryKernel.getEventContext(eventId, { before, after })` for source drill-down, and `MemoryKernel.searchRawEvents(query, { projectId })` for raw keyword discovery when a raw event was not compiled into semantic memory.
 
 Provider facades record raw lifecycle events without importing host runtimes:
 
 - `recordRawEvent()` / `KernelAgentMemoryBackend.rememberTurn()` record user and assistant messages.
+- `KernelAgentMemoryBackend.rememberTurnWithResult()` supports `ingestMode: "immediate_compile" | "selective_compile" | "raw_archive_only" | "raw_then_dream"`. `immediate_compile` preserves legacy behavior; the other modes preserve raw ledger evidence while limiting immediate high-dimensional vector writes.
 - `recordToolCall()` / `KernelAgentMemoryBackend.ingestToolCall()` record assistant tool calls with `rawEventType: "tool_call"`.
 - `recordToolResult()` / `KernelAgentMemoryBackend.ingestToolObservation()` record tool results with `rawEventType: "tool_result"` and `causalityType: "tool_result_for"`.
 - `recordTaskEvent()` / `KernelAgentMemoryBackend.ingestTaskEvent()` record task events with source refs.
@@ -50,6 +55,8 @@ chronological order is not recall ranking.
 Chronological order is for replay and audit. Recall ranking is for selecting useful current context. Agent-facing recall still uses governed universe navigation: query compilation, pulse activation, temporal traversal, graph expansion, inhibition, and evidence budgeting.
 
 Do not use vector topK to reconstruct conversation order. Do not use ledger replay to bypass governed recall. Do not inject an entire thread, day, or transcript into prompt context unless a forensic/audit tool explicitly requests replay.
+
+Cold recall should reactivate evidence in layers: first governed compiled memory and summaries, then bounded raw FTS/metadata search, then optional on-demand reranking of a small raw window. `KernelAgentMemoryBackend.recall()` uses this raw ledger path only after governed universe navigation and BrainRecall fail to produce scoped evidence. Do not restore the old pattern of embedding every raw sentence just to make fuzzy search easier.
 
 ## SourceRefs
 

@@ -8,6 +8,8 @@ import {
   inferEmbeddingVectorDimension,
   suggestEmbeddingModel,
 } from '../src/bin/init.js';
+import { KernelAgentMemoryBackend } from '../src/agent/AgentMemoryBackend.js';
+import { createMemoryKernel } from '../src/factory.js';
 
 const coreRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const doctorBin = join(coreRoot, 'src/bin/doctor.ts');
@@ -15,6 +17,7 @@ const initBin = join(coreRoot, 'src/bin/init.ts');
 const snapshotBin = join(coreRoot, 'src/bin/snapshot.ts');
 const reEmbedBin = join(coreRoot, 'src/bin/re-embed.ts');
 const migrateVectorsBin = join(coreRoot, 'src/bin/migrate-vectors.ts');
+const compactBin = join(coreRoot, 'src/bin/compact.ts');
 
 test('doctor validates a structured cogmem config file', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-doctor-'));
@@ -446,6 +449,79 @@ test('vector migration dry-run can read the configured database without --db', a
   const parsed = JSON.parse(output);
   expect(parsed.dryRun).toBe(true);
   expect(parsed.eligible).toBe(0);
+});
+
+test('compact dry-run reports eligible vector pruning without deleting raw events', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-compact-cli-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\nvector_backend = "sqlite-vec"\n');
+
+  const kernel = createMemoryKernel({ dbPath: join(dir, '.cogmem', 'memory.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+  await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-compact-cli',
+    userText: 'Important CLI compact memory should compile.',
+    assistantText: 'Stored.',
+    ingestMode: 'selective_compile',
+  });
+  const [neuron] = kernel.memoryGraph.listNeuronsByTimeRange(0, Date.now() + 10_000, 'demo');
+  kernel.memoryGraph.updateNeuronStatus(neuron.id, 'archived');
+  kernel.close();
+
+  const proc = Bun.spawn({
+    cmd: ['bun', compactBin, '--config', configPath, '--dry-run', '--status', 'archived', '--json'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(errorOutput).toBe('');
+  expect(exitCode).toBe(0);
+  const parsed = JSON.parse(output);
+  expect(parsed.dryRun).toBe(true);
+  expect(parsed.eligibleVectorCount).toBe(1);
+  expect(parsed.vectorsDeleted).toBe(0);
+  expect(parsed.rawEventsDeleted).toBe(0);
+});
+
+test('doctor storage mode reports vector bytes per raw event', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-doctor-storage-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\nvector_backend = "sqlite-vec"\n');
+
+  const kernel = createMemoryKernel({ dbPath: join(dir, '.cogmem', 'memory.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+  await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-storage-cli',
+    userText: 'Important doctor storage memory should compile.',
+    assistantText: 'Stored.',
+    ingestMode: 'selective_compile',
+  });
+  kernel.close();
+
+  const proc = Bun.spawn({
+    cmd: ['bun', doctorBin, '--config', configPath, '--storage'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(errorOutput).toBe('');
+  expect(exitCode).toBe(0);
+  expect(output).toContain('OK storage raw_events=');
+  expect(output).toContain('vector_bytes_per_raw_event=');
 });
 
 test('vector migration dry-run uses configured vector_dimension by default', async () => {

@@ -2,6 +2,7 @@
 import { loadCogmemConfig, resolveCogmemConfigPath } from '../config/CogmemConfig.js';
 import { createMemoryKernelFromConfig } from '../factory.js';
 import { installOpenClawAutoMemoryPlugin } from '../host/openclaw/AutoMemoryPluginInstaller.js';
+import { compactStorage } from '../storage/StorageCompactor.js';
 function readArg(name) {
     const index = process.argv.indexOf(name);
     if (index === -1)
@@ -35,6 +36,7 @@ const workspace = readArg('--workspace');
 const openclawConfigPath = readArg('--openclaw-config');
 const pluginDir = readArg('--plugin-dir');
 const bunPath = readArg('--bun');
+const storage = hasFlag('--storage');
 if (envPath) {
     fail('--env-path is no longer supported. Use cogmem-init to create .cogmem/config.toml, then run cogmem-doctor --config <config.toml>.');
 }
@@ -55,6 +57,23 @@ else {
         fail('unexpected package identity');
     ok(`kernel ready at ${health.dbPath}`);
     kernel.close();
+    if (storage) {
+        const storageStats = compactStorage({
+            dbPath: health.dbPath,
+            dryRun: true,
+            dimension: loaded.options.vectorDimension,
+        });
+        ok([
+            `storage raw_events=${storageStats.rawEventsBefore}`,
+            `vectors=${storageStats.vectorCountBefore}`,
+            `vector_bytes=${storageStats.vectorBytesBefore}`,
+            `eligible_vector_bytes=${storageStats.eligibleVectorBytes}`,
+            `vector_bytes_per_raw_event=${storageStats.vectorBytesPerRawEventBefore.toFixed(2)}`,
+        ].join(' '));
+        if (storageStats.rawEventsBefore > 0 && storageStats.vectorBytesPerRawEventBefore >= 8192) {
+            warn('vector_storage_growth', 'Vector bytes per raw event are high; consider selective_compile/raw_then_dream and cogmem compact --dry-run.');
+        }
+    }
     if (fix) {
         if (agent !== 'openclaw') {
             fail('doctor --fix currently requires --agent openclaw.');

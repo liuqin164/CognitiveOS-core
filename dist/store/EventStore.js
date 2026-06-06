@@ -74,6 +74,19 @@ export class EventStore {
       CREATE INDEX IF NOT EXISTS idx_memory_events_parent
         ON memory_events(parent_event_id);
 
+      CREATE VIRTUAL TABLE IF NOT EXISTS memory_events_fts USING fts5(
+        event_id UNINDEXED,
+        text,
+        project_id UNINDEXED,
+        workspace_id UNINDEXED,
+        thread_id UNINDEXED,
+        session_id UNINDEXED,
+        local_date UNINDEXED,
+        role UNINDEXED,
+        raw_event_type UNINDEXED,
+        tokenize='unicode61'
+      );
+
       CREATE TABLE IF NOT EXISTS vector_projection_state (
         projection_name TEXT PRIMARY KEY,
         last_event_id TEXT,
@@ -120,6 +133,21 @@ export class EventStore {
         this.db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_events_global_seq ON memory_events(global_seq);`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_events_thread_order ON memory_events(thread_id, thread_seq, event_ordinal, global_seq);`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_events_parent ON memory_events(parent_event_id);`);
+        this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS memory_events_fts USING fts5(
+        event_id UNINDEXED,
+        text,
+        project_id UNINDEXED,
+        workspace_id UNINDEXED,
+        thread_id UNINDEXED,
+        session_id UNINDEXED,
+        local_date UNINDEXED,
+        role UNINDEXED,
+        raw_event_type UNINDEXED,
+        tokenize='unicode61'
+      );
+    `);
+        this.rebuildRawEventFtsIfNeeded();
     }
     append(input) {
         const eventVersion = input.eventVersion ?? this.getNextEventVersion(input.streamId);
@@ -181,6 +209,7 @@ export class EventStore {
         occurred_at, payload_json, payload_hash, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(event.eventId, event.globalSeq ?? null, event.streamId, event.streamType, event.eventType, event.rawEventType || null, event.eventVersion, event.projectId || null, event.workspaceId || null, event.actorId || null, event.causationId || null, event.correlationId || null, event.sourceNeuronId || null, event.sourceId || null, event.contentHash || null, event.threadId || null, event.sessionId || null, event.localDate || null, event.threadSeq || null, event.turnId || null, event.turnSeq || null, event.eventOrdinal || null, event.role || null, event.parentEventId || null, event.prevEventId || null, event.nextEventId || null, event.causalityType || null, event.sourceOffset || null, event.lineStart || null, event.lineEnd || null, event.charStart || null, event.charEnd || null, event.orderingConfidence || null, event.occurredAt, storedPayloadJson, event.payloadHash, event.createdAt);
+        this.upsertRawEventFts(event);
         return event;
     }
     getNextGlobalSeq() {
@@ -379,6 +408,58 @@ export class EventStore {
             children: this.getChildEvents(event.eventId),
         };
     }
+    searchRawEvents(query, options = {}) {
+        const limit = Math.max(1, Math.min(options.limit ?? 20, 200));
+        const ftsQuery = this.toRawEventFtsQuery(query);
+        if (!ftsQuery)
+            return [];
+        const conditions = ['memory_events_fts MATCH ?'];
+        const params = [ftsQuery];
+        if (options.projectId) {
+            conditions.push('e.project_id = ?');
+            params.push(options.projectId);
+        }
+        if (options.workspaceId) {
+            conditions.push('e.workspace_id = ?');
+            params.push(options.workspaceId);
+        }
+        if (options.threadId) {
+            conditions.push('e.thread_id = ?');
+            params.push(options.threadId);
+        }
+        if (options.sessionId) {
+            conditions.push('e.session_id = ?');
+            params.push(options.sessionId);
+        }
+        if (options.localDate) {
+            conditions.push('e.local_date = ?');
+            params.push(options.localDate);
+        }
+        if (options.startTime !== undefined) {
+            conditions.push('e.occurred_at >= ?');
+            params.push(options.startTime);
+        }
+        if (options.endTime !== undefined) {
+            conditions.push('e.occurred_at <= ?');
+            params.push(options.endTime);
+        }
+        params.push(limit);
+        const columns = MEMORY_EVENT_COLUMNS.split(',').map((column) => `e.${column.trim()}`).join(', ');
+        const rows = this.db.prepare(`
+      SELECT ${columns}
+      FROM memory_events_fts
+      JOIN memory_events e ON e.event_id = memory_events_fts.event_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY COALESCE(e.global_seq, 0) ASC,
+               COALESCE(e.thread_seq, e.event_version) ASC,
+               COALESCE(e.event_ordinal, 0) ASC,
+               e.event_id ASC
+      LIMIT ?
+    `).all(...params);
+        if (rows.length > 0)
+            return rows.map((row) => this.mapRow(row));
+        return this.fallbackRawTextSearch(query, options, limit);
+    }
     getChildEvents(parentEventId) {
         const rows = this.db.prepare(`
       SELECT ${MEMORY_EVENT_COLUMNS}
@@ -469,6 +550,89 @@ export class EventStore {
             createdAt: row.created_at,
             ingestedAt: row.created_at,
         };
+    }
+    upsertRawEventFts(event) {
+        this.db.prepare(`DELETE FROM memory_events_fts WHERE event_id = ?`).run(event.eventId);
+        if (this.encryptionProvider)
+            return;
+        const text = this.extractIndexText(event.payload);
+        if (!text.trim())
+            return;
+        this.db.prepare(`
+      INSERT INTO memory_events_fts (
+        event_id, text, project_id, workspace_id, thread_id, session_id, local_date, role, raw_event_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(event.eventId, text, event.projectId || null, event.workspaceId || null, event.threadId || null, event.sessionId || null, event.localDate || null, event.role || null, event.rawEventType || null);
+    }
+    rebuildRawEventFtsIfNeeded() {
+        if (this.encryptionProvider) {
+            this.db.prepare(`DELETE FROM memory_events_fts`).run();
+            return;
+        }
+        const ftsRow = this.db.prepare(`SELECT COUNT(*) AS count FROM memory_events_fts`).get();
+        const eventRow = this.db.prepare(`SELECT COUNT(*) AS count FROM memory_events`).get();
+        if ((ftsRow?.count || 0) >= (eventRow?.count || 0))
+            return;
+        this.db.prepare(`DELETE FROM memory_events_fts`).run();
+        const rows = this.db.prepare(`
+      SELECT ${MEMORY_EVENT_COLUMNS}
+      FROM memory_events
+      ORDER BY COALESCE(global_seq, 0) ASC, event_id ASC
+    `).all();
+        for (const row of rows) {
+            this.upsertRawEventFts(this.mapRow(row));
+        }
+    }
+    extractIndexText(payload) {
+        if (!payload || typeof payload !== 'object')
+            return '';
+        const record = payload;
+        if (typeof record.text === 'string')
+            return record.text;
+        if (typeof record.output === 'string')
+            return record.output;
+        if (typeof record.title === 'string')
+            return record.title;
+        return '';
+    }
+    toRawEventFtsQuery(query) {
+        return query
+            .split(/[^\p{L}\p{N}_-]+/u)
+            .map((token) => token.trim().replace(/"/g, ''))
+            .filter((token) => token.length > 0)
+            .slice(0, 12)
+            .map((token) => `"${token}"`)
+            .join(' ');
+    }
+    fallbackRawTextSearch(query, options, limit) {
+        if (this.encryptionProvider)
+            return [];
+        const tokens = query
+            .split(/[^\p{L}\p{N}_-]+/u)
+            .map((token) => token.trim().toLowerCase())
+            .filter((token) => token.length > 0)
+            .slice(0, 8);
+        if (tokens.length === 0)
+            return [];
+        const page = this.queryEvents(1, Math.max(limit * 4, 50), {
+            projectId: options.projectId ? [options.projectId] : undefined,
+            threadId: options.threadId ? [options.threadId] : undefined,
+            startTime: options.startTime,
+            endTime: options.endTime,
+        });
+        return page.records
+            .filter((event) => {
+            if (options.workspaceId && event.workspaceId !== options.workspaceId)
+                return false;
+            if (options.sessionId && event.sessionId !== options.sessionId)
+                return false;
+            if (options.localDate && event.localDate !== options.localDate)
+                return false;
+            const text = this.extractIndexText(event.payload).toLowerCase();
+            return tokens.every((token) => text.includes(token));
+        })
+            .sort((a, b) => (a.globalSeq || 0) - (b.globalSeq || 0) || a.eventId.localeCompare(b.eventId))
+            .slice(0, limit);
     }
     encodePayload(payloadJson) {
         return this.encryptionProvider?.encrypt(payloadJson) ?? payloadJson;

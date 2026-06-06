@@ -1,5 +1,7 @@
 import type { MemoryKernel, MemoryKernelNavigationResult } from '../factory.js';
 import type { MemoryEvent } from '../types/index.js';
+export type AgentTurnIngestMode = 'immediate_compile' | 'selective_compile' | 'raw_archive_only' | 'raw_then_dream';
+export type AgentTurnCompileReason = 'immediate_compile' | 'durable_signal_detected' | 'low_signal_turn' | 'raw_archive_only' | 'raw_then_dream';
 export interface AgentTurnMemory {
     agentId: string;
     projectId: string;
@@ -11,7 +13,15 @@ export interface AgentTurnMemory {
     userText: string;
     assistantText?: string;
     timestamp?: number;
+    ingestMode?: AgentTurnIngestMode;
     metadata?: Record<string, unknown>;
+}
+export interface AgentTurnMemoryResult {
+    mode: AgentTurnIngestMode;
+    reason: AgentTurnCompileReason;
+    compiled: boolean;
+    rawEventIds: string[];
+    compiledNeuronId?: string;
 }
 export interface AgentRecallQuery {
     agentId: string;
@@ -78,7 +88,7 @@ export interface AgentRecallItem {
     source?: string;
 }
 export interface AgentRecallResult {
-    recallMode: MemoryKernelNavigationResult['recallMode'];
+    recallMode: MemoryKernelNavigationResult['recallMode'] | 'raw_ledger_fallback';
     items: AgentRecallItem[];
     narrative?: NonNullable<MemoryKernelNavigationResult['navigation']>['narrative'];
     pulseTrace?: NonNullable<MemoryKernelNavigationResult['navigation']>['pulse']['trace'];
@@ -90,12 +100,17 @@ export declare class KernelAgentMemoryBackend {
     private readonly kernel;
     constructor(kernel: MemoryKernel);
     rememberTurn(turn: AgentTurnMemory): Promise<void>;
+    rememberTurnWithResult(turn: AgentTurnMemory): Promise<AgentTurnMemoryResult>;
     ingestToolCall(call: AgentToolCallMemory): Promise<MemoryEvent>;
     ingestToolObservation(observation: AgentToolObservationMemory): Promise<MemoryEvent>;
     ingestTaskEvent(task: AgentTaskEventMemory): Promise<MemoryEvent>;
     recall(query: AgentRecallQuery): AgentRecallResult;
     private filterAgentEvidence;
     private toAgentRecallItem;
+    private isAgentRawEvent;
+    private toAgentRawRecallItem;
     private toSourceRef;
+    private shouldCompileTurn;
+    private hasDurableTurnSignal;
 }
 //# sourceMappingURL=AgentMemoryBackend.d.ts.map

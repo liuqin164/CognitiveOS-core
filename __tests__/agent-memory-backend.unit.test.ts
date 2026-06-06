@@ -6,6 +6,107 @@ import { join } from 'node:path';
 import { KernelAgentMemoryBackend } from '../src/agent/AgentMemoryBackend.js';
 import { createMemoryKernel } from '../src/factory.js';
 
+test('agent backend can record a raw-only turn without creating compiled vectors', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-backend-raw-only-'));
+  const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  const result = await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-raw',
+    userText: '在吗',
+    assistantText: '在。',
+    timestamp: 1_700_000_000_000,
+    ingestMode: 'raw_archive_only',
+  });
+
+  expect(result.compiled).toBe(false);
+  expect(result.reason).toBe('raw_archive_only');
+  expect(result.rawEventIds).toHaveLength(2);
+  expect(kernel.eventStore.getEventCount()).toBe(2);
+  expect(kernel.vectorStore.getCurrentCount()).toBe(0);
+  expect(kernel.getThreadEvents('session-raw').map((event) => event.payload.text)).toEqual(['在吗', '在。']);
+
+  kernel.close();
+});
+
+test('agent backend recall falls back to bounded raw ledger search for raw-only memories', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-backend-raw-fallback-'));
+  const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-raw-fallback',
+    userText: 'Raw-only anchor: vector pruning is not memory pruning.',
+    assistantText: 'Stored only in the chronological ledger.',
+    timestamp: 1_700_000_000_000,
+    ingestMode: 'raw_archive_only',
+  });
+
+  const recalled = backend.recall({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    query: 'vector pruning memory pruning',
+    limit: 3,
+  });
+
+  expect(kernel.vectorStore.getCurrentCount()).toBe(0);
+  expect(recalled.recallMode).toBe('raw_ledger_fallback');
+  expect(recalled.fallbackUsed).toBe(true);
+  expect(recalled.items).toHaveLength(1);
+  expect(recalled.items[0].id).toMatch(/^evt-/);
+  expect(recalled.items[0].text).toContain('vector pruning is not memory pruning');
+  expect(recalled.items[0].source).toMatch(/^evt-/);
+
+  kernel.close();
+});
+
+test('agent backend selective mode compiles durable instructions but skips low-signal chatter', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-backend-selective-'));
+  const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  const chatter = await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-selective',
+    userText: '在吗',
+    assistantText: '在。',
+    timestamp: 1_700_000_000_000,
+    ingestMode: 'selective_compile',
+  });
+  const durable = await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-selective',
+    userText: '重要：这个项目以后不要做成 Obsidian 替代品，要保持 agent memory kernel 边界。',
+    assistantText: '我会把这个架构边界作为长期约束。',
+    timestamp: 1_700_000_060_000,
+    ingestMode: 'selective_compile',
+  });
+
+  expect(chatter.compiled).toBe(false);
+  expect(chatter.reason).toBe('low_signal_turn');
+  expect(durable.compiled).toBe(true);
+  expect(durable.reason).toBe('durable_signal_detected');
+  expect(durable.compiledNeuronId).toBeTruthy();
+  expect(kernel.vectorStore.getCurrentCount()).toBe(1);
+  expect(kernel.getThreadEvents('session-selective')).toHaveLength(4);
+
+  const recalled = backend.recall({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    query: '项目不要做成什么',
+    limit: 5,
+  });
+  expect(recalled.items.some((item) => item.text.includes('Obsidian 替代品'))).toBe(true);
+
+  kernel.close();
+});
+
 test('agent backend remembers and recalls a project-scoped turn', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agent-backend-'));
   const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });

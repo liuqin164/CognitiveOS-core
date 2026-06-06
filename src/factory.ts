@@ -64,6 +64,7 @@ import type { Embedder } from './store/Embedder.js';
 import { CognitiveGraphStore } from './store/CognitiveGraphStore.js';
 import { CompilerConfidenceStore } from './store/CompilerConfidenceStore.js';
 import { DeepWriteCandidateStore } from './store/DeepWriteCandidateStore.js';
+import { DreamLedgerStore, type DreamBacklogStatus } from './store/DreamLedgerStore.js';
 import { EntityStore } from './store/EntityStore.js';
 import { EventStore } from './store/EventStore.js';
 import { FactStore } from './store/FactStore.js';
@@ -125,6 +126,17 @@ export interface MemoryKernelNavigationOptions {
   limit?: number;
   startTime?: number;
   endTime?: number;
+}
+
+export interface RawEventSearchOptions {
+  projectId?: string;
+  workspaceId?: string;
+  threadId?: string;
+  sessionId?: string;
+  localDate?: string;
+  startTime?: number;
+  endTime?: number;
+  limit?: number;
 }
 
 export interface RawMemoryEventInput {
@@ -256,6 +268,7 @@ export class MemoryKernel {
   readonly cognitiveGraphStore: CognitiveGraphStore;
   readonly temporalAdjacencyStore: TemporalAdjacencyStore;
   readonly neuronEmbeddingStore: NeuronEmbeddingStore;
+  readonly dreamLedgerStore: DreamLedgerStore;
   readonly pipelineMetrics: PipelineMetrics;
 
   private readonly dbPath: string;
@@ -314,6 +327,7 @@ export class MemoryKernel {
     this.interactionUnitStore = new InteractionUnitStore(this.dbPath);
     this.compilerConfidenceStore = new CompilerConfidenceStore(this.dbPath);
     this.neuronEmbeddingStore = new NeuronEmbeddingStore(db);
+    this.dreamLedgerStore = new DreamLedgerStore(db);
     this.pipelineMetrics = new PipelineMetrics(db);
     this.summaryStore = new SummaryStore(db);
     this.summaryStore.migrateLegacyFactSummaries();
@@ -851,6 +865,18 @@ export class MemoryKernel {
 
   getEventContext(eventId: string, options: { before?: number; after?: number } = {}): MemoryEventContext | null {
     return this.eventStore.getEventContext(eventId, options);
+  }
+
+  searchRawEvents(query: string, options: RawEventSearchOptions = {}): MemoryEvent[] {
+    return this.eventStore.searchRawEvents(query, options);
+  }
+
+  getDreamBacklogStatus(projectId?: string): DreamBacklogStatus {
+    return this.dreamLedgerStore.getStatus(projectId);
+  }
+
+  markDreamed(projectId: string | undefined, globalSeq: number, dreamedAt?: number): DreamBacklogStatus {
+    return this.dreamLedgerStore.markDreamed(projectId, globalSeq, dreamedAt);
   }
 
   async exportSnapshot(outputPath: string): Promise<SnapshotMeta> {

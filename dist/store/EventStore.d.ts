@@ -82,6 +82,16 @@ export declare class EventStore {
         before?: number;
         after?: number;
     }): MemoryEventContext | null;
+    searchRawEvents(query: string, options?: {
+        projectId?: string;
+        workspaceId?: string;
+        threadId?: string;
+        sessionId?: string;
+        localDate?: string;
+        startTime?: number;
+        endTime?: number;
+        limit?: number;
+    }): MemoryEvent[];
     getChildEvents(parentEventId: string): MemoryEvent[];
     updateNextEventId(eventId: string, nextEventId: string | undefined): void;
     getEventCount(): number;
@@ -89,6 +99,11 @@ export declare class EventStore {
     upsertProjectionCheckpoint(checkpoint: ProjectionCheckpoint): void;
     close(): void;
     private mapRow;
+    private upsertRawEventFts;
+    private rebuildRawEventFtsIfNeeded;
+    private extractIndexText;
+    private toRawEventFtsQuery;
+    private fallbackRawTextSearch;
     private encodePayload;
     private decodePayload;
 }

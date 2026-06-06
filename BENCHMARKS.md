@@ -16,8 +16,16 @@ The `memory_natural_emergence` benchmark group runs on the `memory_recall` eval 
 - `context_budget_efficiency`
 - `pulse_activation_useful_expansion_rate`
 - `inhibition_correctness_rate`
+- `vector_bytes_per_raw_event`
+- `compiled_neuron_per_turn_rate`
+- `immediate_embedding_skip_rate`
+- `dream_coverage_rate`
+- `undreamed_raw_backlog_count`
+- `cold_recall_rehydration_success_rate`
 
 This group checks both activation and inhibition: the kernel should surface old but important memories while suppressing stale, superseded, suspect, and cross-project evidence.
+
+Storage metrics are quality gates, not standalone wins. A run only passes if vector bytes drop while critical recall, old-but-important recall, provenance completeness, and leakage metrics stay within the accepted threshold.
 
 ## Baselines
 
@@ -29,5 +37,8 @@ Use external benchmark ideas only as baselines or measurements:
 - token saving metric
 - latency metric
 - provenance completeness metric
+- immediate-compile-every-turn storage baseline
+- selective-compile storage baseline
+- raw-then-dream coverage baseline
 
 These baselines must not become the default agent-facing memory path. The default path remains structure-first universe navigation with pulse activation, temporal traversal, governance suppression, and bounded context.

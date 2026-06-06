@@ -51,6 +51,7 @@ import { createConfiguredEmbedder } from './store/EmbedderFactory.js';
 import { CognitiveGraphStore } from './store/CognitiveGraphStore.js';
 import { CompilerConfidenceStore } from './store/CompilerConfidenceStore.js';
 import { DeepWriteCandidateStore } from './store/DeepWriteCandidateStore.js';
+import { DreamLedgerStore } from './store/DreamLedgerStore.js';
 import { EntityStore } from './store/EntityStore.js';
 import { EventStore } from './store/EventStore.js';
 import { FactStore } from './store/FactStore.js';
@@ -78,6 +79,7 @@ export class MemoryKernel {
     cognitiveGraphStore;
     temporalAdjacencyStore;
     neuronEmbeddingStore;
+    dreamLedgerStore;
     pipelineMetrics;
     dbPath;
     embedder;
@@ -135,6 +137,7 @@ export class MemoryKernel {
         this.interactionUnitStore = new InteractionUnitStore(this.dbPath);
         this.compilerConfidenceStore = new CompilerConfidenceStore(this.dbPath);
         this.neuronEmbeddingStore = new NeuronEmbeddingStore(db);
+        this.dreamLedgerStore = new DreamLedgerStore(db);
         this.pipelineMetrics = new PipelineMetrics(db);
         this.summaryStore = new SummaryStore(db);
         this.summaryStore.migrateLegacyFactSummaries();
@@ -591,6 +594,15 @@ export class MemoryKernel {
     }
     getEventContext(eventId, options = {}) {
         return this.eventStore.getEventContext(eventId, options);
+    }
+    searchRawEvents(query, options = {}) {
+        return this.eventStore.searchRawEvents(query, options);
+    }
+    getDreamBacklogStatus(projectId) {
+        return this.dreamLedgerStore.getStatus(projectId);
+    }
+    markDreamed(projectId, globalSeq, dreamedAt) {
+        return this.dreamLedgerStore.markDreamed(projectId, globalSeq, dreamedAt);
     }
     async exportSnapshot(outputPath) {
         const exporter = new SnapshotExporter({
