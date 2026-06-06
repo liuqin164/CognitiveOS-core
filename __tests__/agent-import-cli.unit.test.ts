@@ -549,6 +549,8 @@ test('cogmem-connect can install the OpenClaw automatic memory plugin wrapper', 
   expect(manifest.configSchema.type).toBe('object');
   expect(manifest.configSchema.properties.configPath.type).toBe('string');
   expect(manifest.configSchema.properties.autoRecall.type).toBe('boolean');
+  expect(manifest.configSchema.properties.ingestMode.enum).toContain('selective_compile');
+  expect(manifest.configSchema.properties.ingestMode.enum).toContain('raw_then_dream');
   expect(manifest.configSchema.properties.auditLog.type).toBe('boolean');
 
   const openclawConfig = JSON.parse(readFileSync(openclawConfigPath, 'utf8'));
@@ -557,10 +559,14 @@ test('cogmem-connect can install the OpenClaw automatic memory plugin wrapper', 
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].hooks.allowConversationAccess).toBe(true);
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].hooks.allowPromptInjection).toBe(true);
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.configPath).toBe(configPath);
+  expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.ingestMode).toBe('selective_compile');
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.auditLog).toBe(true);
   expect(indexBody).toContain("openclaw-auto-memory.jsonl");
   expect(indexBody).toContain("action: recalled.context ? 'inject' : 'skip'");
   expect(indexBody).toContain("action: 'remember'");
+  const bridgeBody = readFileSync(join(pluginDir, 'bridge.mjs'), 'utf8');
+  expect(bridgeBody).toContain('rememberTurnWithResult');
+  expect(bridgeBody).toContain("ingestMode: config.ingestMode || 'selective_compile'");
 });
 
 test('doctor --fix can repair OpenClaw automatic memory wiring', async () => {

@@ -178,6 +178,7 @@ function buildPatchedOpenClawConfig(input: {
       limit: 5,
       maxQueryChars: 2000,
       maxAssistantChars: 12000,
+      ingestMode: 'selective_compile',
       recallTimeoutMs: 30000,
       rememberTimeoutMs: 60000,
       auditLog: true,
@@ -220,6 +221,10 @@ function buildPluginFiles(): PluginFiles {
           limit: { type: 'number' },
           maxQueryChars: { type: 'number' },
           maxAssistantChars: { type: 'number' },
+          ingestMode: {
+            type: 'string',
+            enum: ['immediate_compile', 'selective_compile', 'raw_archive_only', 'raw_then_dream'],
+          },
           recallTimeoutMs: { type: 'number' },
           rememberTimeoutMs: { type: 'number' },
           auditLog: { type: 'boolean' },
@@ -251,6 +256,7 @@ const DEFAULTS = {
   limit: 5,
   maxQueryChars: 2000,
   maxAssistantChars: 12000,
+  ingestMode: 'selective_compile',
   recallTimeoutMs: 30000,
   rememberTimeoutMs: 60000,
   auditLog: true,
@@ -420,7 +426,7 @@ const plugin = {
       }
       seenTurns.set(sessionId, key);
       try {
-        runBridge('remember', {
+        const remembered = runBridge('remember', {
           sessionId,
           userText,
           assistantText: assistantText.slice(0, config.maxAssistantChars || 12000),
@@ -432,6 +438,9 @@ const plugin = {
           action: 'remember',
           userChars: userText.length,
           assistantChars: assistantText.length,
+          ingestMode: remembered.ingestMode,
+          compiled: remembered.compiled,
+          compileReason: remembered.compileReason,
         });
       } catch (error) {
         audit(config, {
@@ -481,20 +490,21 @@ try {
       fallbackUsed: result.fallbackUsed,
     }));
   } else if (command === 'remember') {
-    await memory.rememberTurn({
+    const result = await memory.rememberTurnWithResult({
       agentId: config.agentId || 'openclaw',
       projectId: config.projectId || 'openclaw',
       workspaceId: config.projectId || 'openclaw',
       sessionId: input.sessionId || 'openclaw-session',
       userText: input.userText || '',
       assistantText: input.assistantText || '',
+      ingestMode: config.ingestMode || 'selective_compile',
       timestamp: Date.now(),
       metadata: {
         source: 'openclaw-plugin',
         pluginId: 'cogmem-auto-memory',
       },
     });
-    console.log(JSON.stringify({ remembered: true }));
+    console.log(JSON.stringify({ remembered: true, ...result }));
   } else {
     throw new Error('unknown cogmem bridge command: ' + command);
   }
