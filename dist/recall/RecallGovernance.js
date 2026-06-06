@@ -3,6 +3,8 @@ export function isRecallableMemoryEvidence(neuron) {
         return false;
     if (isOperationalNoiseMemoryEvidence(neuron))
         return false;
+    if (isImportedSummarySupportMemoryEvidence(neuron))
+        return false;
     const status = neuron.metadata.status ?? 'active';
     if (status === 'active' || status === 'cold')
         return true;
@@ -25,6 +27,8 @@ export function recallSuppressionReasonFor(neuron) {
         return undefined;
     if (isOperationalNoiseMemoryEvidence(neuron))
         return 'operational_noise';
+    if (isImportedSummarySupportMemoryEvidence(neuron))
+        return 'imported_summary_support';
     const status = neuron.metadata.status ?? 'active';
     if (status === 'active' || status === 'cold')
         return undefined;
@@ -56,6 +60,12 @@ export function isOperationalNoiseMemoryEvidence(neuron) {
         return true;
     }
     return isOperationalNoiseText(neuron.content);
+}
+export function isImportedSummarySupportMemoryEvidence(neuron) {
+    const tags = neuron.metadata.tags || [];
+    return tags.includes('governance:imported_summary_support')
+        || (tags.includes('source_class:daily_memory')
+            && tags.includes('provenance:imported_summary'));
 }
 export function isOperationalNoiseText(text) {
     const normalized = String(text || '').trim().toLowerCase();

@@ -3,6 +3,7 @@ import type { Neuron } from '../types/index.js';
 export type RecallGovernanceSuppressionReason =
   | 'archived'
   | 'operational_noise'
+  | 'imported_summary_support'
   | 'suspect_llm_inference'
   | 'suspect_external_tool_observation'
   | 'suspect_unverified_claim'
@@ -11,6 +12,7 @@ export type RecallGovernanceSuppressionReason =
 export function isRecallableMemoryEvidence(neuron: Neuron | null | undefined): neuron is Neuron {
   if (!neuron) return false;
   if (isOperationalNoiseMemoryEvidence(neuron)) return false;
+  if (isImportedSummarySupportMemoryEvidence(neuron)) return false;
   const status = neuron.metadata.status ?? 'active';
   if (status === 'active' || status === 'cold') return true;
   if (status === 'suspect') return isRawUserUtteranceEvidence(neuron);
@@ -32,6 +34,7 @@ export function recallSuppressionReasonFor(
 ): RecallGovernanceSuppressionReason | undefined {
   if (!neuron) return undefined;
   if (isOperationalNoiseMemoryEvidence(neuron)) return 'operational_noise';
+  if (isImportedSummarySupportMemoryEvidence(neuron)) return 'imported_summary_support';
   const status = neuron.metadata.status ?? 'active';
   if (status === 'active' || status === 'cold') return undefined;
   if (status === 'suspect' && isRawUserUtteranceEvidence(neuron)) return undefined;
@@ -61,6 +64,15 @@ export function isOperationalNoiseMemoryEvidence(neuron: Neuron): boolean {
     return true;
   }
   return isOperationalNoiseText(neuron.content);
+}
+
+export function isImportedSummarySupportMemoryEvidence(neuron: Neuron): boolean {
+  const tags = neuron.metadata.tags || [];
+  return tags.includes('governance:imported_summary_support')
+    || (
+      tags.includes('source_class:daily_memory')
+      && tags.includes('provenance:imported_summary')
+    );
 }
 
 export function isOperationalNoiseText(text: string | null | undefined): boolean {

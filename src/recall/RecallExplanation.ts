@@ -75,13 +75,17 @@ export function explainRecallWithKernel(
       endTime: options.endTime,
     });
     const scoped = navigated.rawEvidence.filter((neuron) => isInAgentScope(neuron, options.agentId!));
-    const included = scoped.slice(0, limit);
+    const scopedRecallable = scoped.filter((neuron) => isRecallableMemoryEvidence(neuron));
+    const included = scopedRecallable.slice(0, limit);
     const filteredEvidence = uniqueFilteredEvidence([
       ...toNavigationFilteredEvidence(navigated, kernel),
+      ...scoped
+        .filter((neuron) => !isRecallableMemoryEvidence(neuron))
+        .map((neuron) => toFilteredEvidence(neuron, 'status_suppressed', undefined, kernel)),
       ...navigated.rawEvidence
         .filter((neuron) => !isInAgentScope(neuron, options.agentId!))
         .map((neuron) => toFilteredEvidence(neuron, 'agent_scope_mismatch', undefined, kernel)),
-      ...scoped
+      ...scopedRecallable
         .slice(limit)
         .map((neuron) => toFilteredEvidence(neuron, 'over_context_limit', undefined, kernel)),
     ]);

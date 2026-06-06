@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createMemoryKernel } from '../src/factory.js';
 import { parseArgs } from '../src/bin/import-support.js';
 import { KernelAgentMemoryBackend } from '../src/agent/index.js';
+import { explainRecallWithKernel } from '../src/recall/RecallExplanation.js';
 
 const coreRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const openClawImportBin = join(coreRoot, 'src/bin/import-openclaw.ts');
@@ -165,6 +166,73 @@ test('OpenClaw migrated records are visible through KernelAgentMemoryBackend rec
   kernel.close();
 
   expect(recalled.items.some((item) => item.text.includes('BLE device provisioning'))).toBe(true);
+});
+
+test('OpenClaw legacy daily summary imports remain provenance support instead of active agent context', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-openclaw-legacy-summary-'));
+  const dbPath = join(dir, 'memory.db');
+  mkdirSync(join(dir, 'memory'));
+  writeFileSync(join(dir, 'memory', '2026-06-03-1310.md'), [
+    '# 2026-06-03',
+    '根据官方项目文档检查您的本地配置文件 (`~/.openclaw/openclaw.json`)，以下是符合建议的地方和可优化的地方：',
+    '',
+    '1. **优先级高**：添加会话重置和维护配置（防止会话文件无限增长）',
+    '2. **优先级中**：配置工具允许/禁止列表（明确安全边界）',
+    '3. **可选**：根据您的使用场景添加日志、沙箱或高级模型配置',
+    '',
+    '重启本地的hermes',
+  ].join('\n'));
+
+  const imported = await runCli([
+    'bun',
+    openClawImportBin,
+    '--workspace',
+    dir,
+    '--db',
+    dbPath,
+    '--project',
+    'openclaw-test',
+    '--json',
+  ]);
+
+  expect(imported.stderr).toBe('');
+  expect(imported.exitCode).toBe(0);
+
+  const kernel = createMemoryKernel({ dbPath });
+  const importedSummary = kernel.memoryGraph.getAllNeurons()
+    .filter((item) => (
+      item.content.includes('重启本地的hermes')
+      && (item.metadata.tags || []).includes('source:openclaw_daily_memory')
+    ));
+  expect(importedSummary.length).toBeGreaterThan(0);
+  for (const item of importedSummary) {
+    expect(item.metadata.tags).toContain('reliability:imported_summary');
+    expect(item.metadata.tags).toContain('provenance:imported_summary');
+    expect(item.metadata.tags).toContain('governance:imported_summary_support');
+    expect(item.metadata.tags).toContain('memory_layer:summary_seed');
+  }
+
+  const memory = new KernelAgentMemoryBackend(kernel);
+  const recalled = memory.recall({
+    agentId: 'openclaw',
+    projectId: 'openclaw-test',
+    query: 'OpenClaw 配置 重启 hermes',
+    limit: 5,
+  });
+  const explanation = explainRecallWithKernel(kernel, {
+    agentId: 'openclaw',
+    projectId: 'openclaw-test',
+    query: 'OpenClaw 配置 重启 hermes',
+    limit: 5,
+  });
+  kernel.close();
+
+  expect(recalled.items.some((item) => item.text.includes('重启本地的hermes'))).toBe(false);
+  expect(explanation.filteredEvidence?.some((item) => (
+    item.text?.includes('重启本地的hermes')
+    && item.reason === 'status_suppressed'
+    && item.governanceReason === 'imported_summary_support'
+  ))).toBe(true);
 });
 
 test('Hermes import migrates profile and session markdown into core memory', async () => {

@@ -9,7 +9,27 @@ export class OpenClawDailyMemoryAdapter {
         return decorateOpenClawRecords(adapted, source, {
             adapterKind: this.kind,
             adapterVersion: this.adapterVersion,
-            baseTags: ['openclaw', 'source_class:daily_memory', 'memory_layer:episodic']
+            baseTags: ['openclaw', 'source_class:daily_memory'],
+            decorateRecord: (record) => {
+                if (record.provenance.reliabilityClass === 'raw_utterance') {
+                    return {
+                        tags: ['memory_layer:episodic']
+                    };
+                }
+                return {
+                    reliabilityClass: 'imported_summary',
+                    tags: [
+                        'provenance:imported_summary',
+                        'governance:imported_summary_support',
+                        'memory_layer:summary_seed'
+                    ],
+                    metadata: {
+                        openclawImportKind: 'daily_memory_summary',
+                        importedSummarySupport: true
+                    },
+                    confidenceHint: Math.min(record.confidenceHint, 0.58)
+                };
+            }
         });
     }
 }

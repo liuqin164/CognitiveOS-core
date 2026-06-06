@@ -57,6 +57,43 @@ describe('TopicSummaryBoard', () => {
     expect(graph.getNeuron(id!)?.content).toContain('Covers 2 memories.');
   });
 
+  test('refresh does not compile imported summary support into active topic summaries', () => {
+    const graph = new MemoryGraph();
+    const support = addNeuron(graph, 'legacy imported summary: restart hermes');
+    graph.updateNeuronMetadata(support.id, {
+      tags: [
+        'source_class:daily_memory',
+        'provenance:imported_summary',
+        'governance:imported_summary_support',
+        'memory_layer:summary_seed',
+      ],
+      sourceType: 'llm_inference'
+    });
+
+    expect(board(graph).refresh('memory/governance', 'project-a')).toBeNull();
+    expect(graph.getNeuronIdsByTopicPrefix('memory/governance', 'project-a')
+      .some((id) => graph.getNeuron(id)?.metadata.tags?.includes('topic_summary'))).toBe(false);
+  });
+
+  test('refresh archives existing topic summaries after their sources become non-recallable', () => {
+    const graph = new MemoryGraph();
+    const source = addNeuron(graph, 'memory governance policy');
+    const b = board(graph);
+    const id = b.refresh('memory/governance', 'project-a');
+    graph.updateNeuronMetadata(source.id, {
+      tags: [
+        'source_class:daily_memory',
+        'provenance:imported_summary',
+        'governance:imported_summary_support',
+      ],
+      sourceType: 'llm_inference'
+    });
+
+    expect(b.refresh('memory/governance', 'project-a')).toBeNull();
+    expect(graph.getNeuron(id!)?.metadata.status).toBe('archived');
+    expect(b.getSummaryNeuron('memory/governance', 'project-a')).toBeNull();
+  });
+
   test('getSummaryNeuron returns latest summary for exact topic', () => {
     const graph = new MemoryGraph();
     addNeuron(graph, 'runtime topic', 'skills/runtime');

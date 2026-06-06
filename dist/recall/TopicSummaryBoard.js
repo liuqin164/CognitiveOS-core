@@ -1,5 +1,6 @@
 import { NeuronFactory } from '../core/Neuron.js';
 import { normalizeTopicPath } from './HierarchicalRecallRouter.js';
+import { isRecallableMemoryEvidence } from './RecallGovernance.js';
 const SUMMARY_TAG = 'topic_summary';
 const SUMMARY_SOURCE_TAG = 'topic_summary:auto';
 const SUMMARY_RUN_ID = 'topic_summary_board';
@@ -14,17 +15,20 @@ export class TopicSummaryBoard {
         const normalized = normalizeTopicPath(topicPath);
         if (!normalized || !projectId)
             return null;
-        const sourceNeurons = this.getSourceNeurons(normalized, projectId);
-        if (sourceNeurons.length === 0)
-            return this.getSummaryNeuron(normalized, projectId)?.id ?? null;
         const existing = this.getSummaryNeuron(normalized, projectId);
+        const sourceNeurons = this.getSourceNeurons(normalized, projectId);
+        if (sourceNeurons.length === 0) {
+            if (existing)
+                this.archiveSummaryWithoutRecallableSources(existing);
+            return null;
+        }
         const latestSourceAt = Math.max(...sourceNeurons.map((neuron) => neuron.metadata.updatedAt || neuron.metadata.createdAt));
         if (existing && !options.forceRebuild && (existing.metadata.updatedAt || existing.metadata.createdAt) >= latestSourceAt) {
             return existing.id;
         }
         const now = Date.now();
         const summaryText = this.buildSummaryText(normalized, sourceNeurons);
-        const tags = [SUMMARY_TAG, SUMMARY_SOURCE_TAG, `topic:${normalized}`];
+        const tags = [SUMMARY_TAG, SUMMARY_SOURCE_TAG, 'source_filter:recallable', `topic:${normalized}`];
         const sourceIds = sourceNeurons.map((neuron) => neuron.id);
         this.summaryStore.insertSummary({
             projectId,
@@ -94,6 +98,7 @@ export class TopicSummaryBoard {
             .filter((neuron) => Boolean(neuron))
             .filter((neuron) => neuron.metadata.topicPath === normalized
             && neuron.metadata.type === 'doc'
+            && (neuron.metadata.status ?? 'active') !== 'archived'
             && this.isSummaryNeuron(neuron));
         candidates.sort((a, b) => (b.metadata.updatedAt || b.metadata.createdAt) - (a.metadata.updatedAt || a.metadata.createdAt));
         return candidates[0] || null;
@@ -103,6 +108,7 @@ export class TopicSummaryBoard {
             .map((id) => this.memoryGraph.getNeuron(id))
             .filter((neuron) => Boolean(neuron))
             .filter((neuron) => !this.isSummaryNeuron(neuron))
+            .filter((neuron) => isRecallableMemoryEvidence(neuron))
             .sort((a, b) => (b.metadata.updatedAt || b.metadata.createdAt) - (a.metadata.updatedAt || a.metadata.createdAt));
     }
     isSummaryNeuron(neuron) {
@@ -121,5 +127,13 @@ export class TopicSummaryBoard {
     }
     compact(content) {
         return content.replace(/\s+/g, ' ').trim().slice(0, 180);
+    }
+    archiveSummaryWithoutRecallableSources(summary) {
+        const tags = summary.metadata.tags || [];
+        this.memoryGraph.updateNeuronMetadata(summary.id, {
+            status: 'archived',
+            updatedAt: Date.now(),
+            tags: Array.from(new Set([...tags, 'governance:no_recallable_topic_sources']))
+        });
     }
 }

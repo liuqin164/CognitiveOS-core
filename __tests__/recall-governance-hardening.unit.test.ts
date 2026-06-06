@@ -72,6 +72,18 @@ test('recall governance hardening metrics stay within fixed leakage thresholds',
     content: '[OpenClaw heartbeat poll]\nAgent: HEARTBEAT_OK',
     tags: ['agent:openclaw', 'hardening', 'record:heartbeat'],
   });
+  const importedSummarySupport = await kernel.ingest({
+    projectId: 'project-a',
+    content: 'Governance hardening sentinel imported OpenClaw daily summary support must not enter context.',
+    sourceType: 'llm_inference',
+    tags: [
+      'agent:openclaw',
+      'hardening',
+      'source_class:daily_memory',
+      'provenance:imported_summary',
+      'governance:imported_summary_support',
+    ],
+  });
   const otherProject = await kernel.ingest({
     projectId: 'project-b',
     content: 'Governance hardening sentinel project B secret filtered evidence must not leak.',
@@ -112,6 +124,7 @@ test('recall governance hardening metrics stay within fixed leakage thresholds',
     suspect_tool_observation_leakage_rate: leakageRate([suspectTool.id], rawIds),
     suspect_unverified_claim_leakage_rate: leakageRate([suspectClaim.id], rawIds),
     operational_noise_leakage_rate: leakageRate([operationalNoise.id], rawIds),
+    imported_summary_support_leakage_rate: leakageRate([importedSummarySupport.id], rawIds),
     raw_user_evidence_preservation_rate: rawIds.has(rawUser.id) ? 1 : 0,
     filtered_evidence_explainability_rate: statusFiltered.every((item) => item.governanceReason) ? 1 : 0,
     cross_project_filtered_evidence_leakage_rate: filtered.some((item) => item.projectId === 'project-b') ? 1 : 0,
@@ -126,6 +139,7 @@ test('recall governance hardening metrics stay within fixed leakage thresholds',
   expect(metrics.suspect_tool_observation_leakage_rate).toBe(0);
   expect(metrics.suspect_unverified_claim_leakage_rate).toBe(0);
   expect(metrics.operational_noise_leakage_rate).toBe(0);
+  expect(metrics.imported_summary_support_leakage_rate).toBe(0);
   expect(metrics.raw_user_evidence_preservation_rate).toBe(1);
   expect(metrics.filtered_evidence_explainability_rate).toBe(1);
   expect(metrics.cross_project_filtered_evidence_leakage_rate).toBe(0);
@@ -135,6 +149,7 @@ test('recall governance hardening metrics stay within fixed leakage thresholds',
   expect(statusFiltered.map((item) => item.governanceReason)).toContain('suspect_external_tool_observation');
   expect(statusFiltered.map((item) => item.governanceReason)).toContain('suspect_unverified_claim');
   expect(statusFiltered.map((item) => item.governanceReason)).toContain('operational_noise');
+  expect(statusFiltered.map((item) => item.governanceReason)).toContain('imported_summary_support');
 
   kernel.close();
 });

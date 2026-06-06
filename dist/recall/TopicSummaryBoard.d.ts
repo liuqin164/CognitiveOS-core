@@ -22,5 +22,6 @@ export declare class TopicSummaryBoard {
     private isSummaryNeuron;
     private buildSummaryText;
     private compact;
+    private archiveSummaryWithoutRecallableSources;
 }
 //# sourceMappingURL=TopicSummaryBoard.d.ts.map
