@@ -454,6 +454,10 @@ test('agent-facing skill files tell OpenClaw and Hermes agents how to self-insta
   expect(openclaw).toContain('memory.backend');
   expect(openclaw).toContain('Do not write `plugins.slots.memory`');
   expect(openclaw).not.toContain('plugins.slots.memory = "cogmem"');
+  expect(openclaw).toContain('Queued remember');
+  expect(openclaw).toContain('cogmem-explain-recall --query');
+  expect(openclaw).toContain('sourceAnchor');
+  expect(openclaw).toContain('filteredEvidence');
   expect(openclaw).toContain('--session ./one.md --session ./two.md');
   expect(openclaw).toContain('--memory ./one.md --memory ./two.md');
   expect(hermes).toContain('cogmem-import-hermes');
@@ -551,6 +555,8 @@ test('cogmem-connect can install the OpenClaw automatic memory plugin wrapper', 
   expect(manifest.configSchema.properties.autoRecall.type).toBe('boolean');
   expect(manifest.configSchema.properties.ingestMode.enum).toContain('selective_compile');
   expect(manifest.configSchema.properties.ingestMode.enum).toContain('raw_then_dream');
+  expect(manifest.configSchema.properties.rememberStrategy.enum).toContain('queued');
+  expect(manifest.configSchema.properties.rememberQueuePath.type).toBe('string');
   expect(manifest.configSchema.properties.auditLog.type).toBe('boolean');
 
   const openclawConfig = JSON.parse(readFileSync(openclawConfigPath, 'utf8'));
@@ -560,13 +566,22 @@ test('cogmem-connect can install the OpenClaw automatic memory plugin wrapper', 
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].hooks.allowPromptInjection).toBe(true);
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.configPath).toBe(configPath);
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.ingestMode).toBe('selective_compile');
+  expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.rememberStrategy).toBe('queued');
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.auditLog).toBe(true);
   expect(indexBody).toContain("openclaw-auto-memory.jsonl");
   expect(indexBody).toContain("action: recalled.context ? 'inject' : 'skip'");
-  expect(indexBody).toContain("action: 'remember'");
+  expect(indexBody).toContain('function enqueueRememberJob(config, payload)');
+  expect(indexBody).toContain("action: 'enqueue_remember'");
+  expect(indexBody).toContain("spawnBridgeDrain(config)");
+  const agentEndBody = indexBody.slice(indexBody.indexOf("api.on('agent_end'"));
+  expect(agentEndBody).not.toContain("runBridge('remember'");
   const bridgeBody = readFileSync(join(pluginDir, 'bridge.mjs'), 'utf8');
   expect(bridgeBody).toContain('rememberTurnWithResult');
-  expect(bridgeBody).toContain("ingestMode: config.ingestMode || 'selective_compile'");
+  expect(bridgeBody).toContain("ingestMode: bridgeConfig.ingestMode || 'selective_compile'");
+  expect(bridgeBody).toContain("command === 'drain-remember-queue'");
+  expect(bridgeBody).toContain('ingestToolCall');
+  expect(bridgeBody).toContain('ingestToolObservation');
+  expect(bridgeBody).toContain('ingestTaskEvent');
 });
 
 test('doctor --fix can repair OpenClaw automatic memory wiring', async () => {

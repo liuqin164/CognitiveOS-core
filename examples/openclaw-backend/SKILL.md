@@ -156,6 +156,8 @@ To make every future OpenClaw turn automatically use the memory kernel, install 
 
 `--auto` writes `<workspace>/extensions/cogmem-auto-memory/`, patches `plugins.load.paths`, and enables `hooks.allowPromptInjection=true` and `hooks.allowConversationAccess=true` for the wrapper. The wrapper registers `before_prompt_build` for governed recall and `agent_end` for turn recording, then calls `KernelAgentMemoryBackend` through `@CognitiveOS/core` public API via a Bun bridge. Core does not import OpenClaw.
 
+Queued remember is the default. `agent_end` appends a durable JSONL job under `.cogmem/queue/openclaw-remember.jsonl` and spawns a background drain process, so Telegram or gateway responses are not blocked by embeddings, SQLite writes, or slow local models. If a drain fails, the job is retried and then moved to a dead-letter file instead of being silently discarded.
+
 After package updates or config drift, repair the host wiring:
 
 ```bash
@@ -167,7 +169,17 @@ The wrapper maps OpenClaw behavior to core like this:
 - `memory_search` should call `memory.recall()` and return `recall.narrative` plus cited `recall.items`.
 - `memory_get` should read from the cited evidence returned by core or from the original workspace file when a citation includes a file path.
 - Prompt injection should use `recall.narrative`, not a raw vector nearest-neighbor dump.
-- Turn capture should call `memory.rememberTurn()` after the agent response.
+- Turn capture should enqueue `memory.rememberTurnWithResult()` after the agent response. If OpenClaw exposes tool calls, tool results, or task events in the hook payload, the wrapper records them as ledger events with parent/child causality; if a result has no matching call, it is stored as a partial-causality task event instead of inventing a chain.
+
+## Debug Recall
+
+Normal prompt injection stays compact. When a user asks where a memory came from, why it was recalled, or why another candidate was filtered, run:
+
+```bash
+./node_modules/.bin/cogmem-explain-recall --query "<user question>" --project openclaw --agent openclaw --json
+```
+
+Inspect `sourceAnchor`, `activationPath`, `whyMatched`, `filteredEvidence`, and `governanceReason`. `sourceAnchor` points back to raw ledger events or imported source files. `filteredEvidence` is for audit/debug and must not be injected wholesale into normal prompts.
 
 After runtime wiring changes, run:
 

@@ -1,5 +1,5 @@
 import type { MemoryKernel, MemoryKernelNavigationResult } from '../factory.js';
-import { isRecallableMemoryEvidence } from '../recall/RecallGovernance.js';
+import { isOperationalNoiseText, isRecallableMemoryEvidence } from '../recall/RecallGovernance.js';
 import type { MemoryEvent, MemorySourceRef } from '../types/index.js';
 
 export type AgentTurnIngestMode =
@@ -370,6 +370,7 @@ export class KernelAgentMemoryBackend {
     });
     const rawItems = rawEvents
       .filter((event) => this.isAgentRawEvent(event, query.agentId))
+      .filter((event) => !this.isOperationalNoiseRawEvent(event))
       .slice(0, limit)
       .map((event) => this.toAgentRawRecallItem(event));
 
@@ -411,6 +412,20 @@ export class KernelAgentMemoryBackend {
   private isAgentRawEvent(event: MemoryEvent, agentId: string): boolean {
     if (!event.sourceId) return true;
     return event.sourceId === agentId || event.sourceId.startsWith(`${agentId}:`);
+  }
+
+  private isOperationalNoiseRawEvent(event: MemoryEvent): boolean {
+    const payload = event.payload as { text?: unknown; metadata?: Record<string, unknown> };
+    const tags = Array.isArray(payload.metadata?.tags) ? payload.metadata.tags : [];
+    if (tags.some((tag) => (
+      tag === 'operational_noise'
+      || tag === 'record:heartbeat'
+      || tag === 'system:heartbeat'
+      || tag === 'routine:heartbeat'
+    ))) {
+      return true;
+    }
+    return isOperationalNoiseText(typeof payload.text === 'string' ? payload.text : JSON.stringify(event.payload));
   }
 
   private toAgentRawRecallItem(event: MemoryEvent): AgentRecallItem {

@@ -2,6 +2,7 @@ import type { Neuron } from '../types/index.js';
 
 export type RecallGovernanceSuppressionReason =
   | 'archived'
+  | 'operational_noise'
   | 'suspect_llm_inference'
   | 'suspect_external_tool_observation'
   | 'suspect_unverified_claim'
@@ -9,6 +10,7 @@ export type RecallGovernanceSuppressionReason =
 
 export function isRecallableMemoryEvidence(neuron: Neuron | null | undefined): neuron is Neuron {
   if (!neuron) return false;
+  if (isOperationalNoiseMemoryEvidence(neuron)) return false;
   const status = neuron.metadata.status ?? 'active';
   if (status === 'active' || status === 'cold') return true;
   if (status === 'suspect') return isRawUserUtteranceEvidence(neuron);
@@ -29,6 +31,7 @@ export function recallSuppressionReasonFor(
   neuron: Neuron | null | undefined,
 ): RecallGovernanceSuppressionReason | undefined {
   if (!neuron) return undefined;
+  if (isOperationalNoiseMemoryEvidence(neuron)) return 'operational_noise';
   const status = neuron.metadata.status ?? 'active';
   if (status === 'active' || status === 'cold') return undefined;
   if (status === 'suspect' && isRawUserUtteranceEvidence(neuron)) return undefined;
@@ -45,4 +48,31 @@ export function isRawUserUtteranceEvidence(neuron: Neuron): boolean {
     && tags.includes('reliability:raw_utterance')
     && tags.includes('role:user')
     && (tags.includes('record:raw_utterance') || tags.includes('record:conversation_message'));
+}
+
+export function isOperationalNoiseMemoryEvidence(neuron: Neuron): boolean {
+  const tags = neuron.metadata.tags || [];
+  if (tags.some((tag) => (
+    tag === 'operational_noise'
+    || tag === 'record:heartbeat'
+    || tag === 'system:heartbeat'
+    || tag === 'routine:heartbeat'
+  ))) {
+    return true;
+  }
+  return isOperationalNoiseText(neuron.content);
+}
+
+export function isOperationalNoiseText(text: string | null | undefined): boolean {
+  const normalized = String(text || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return [
+    /\[openclaw heartbeat poll\]/i,
+    /^heartbeat_ok$/i,
+    /\bheartbeat_ok\b/i,
+    /\bheartbeat poll\b/i,
+    /please complete your identity setup/i,
+    /test your telegram bot by searching for it/i,
+    /\broutine system ping\b/i,
+  ].some((pattern) => pattern.test(normalized));
 }

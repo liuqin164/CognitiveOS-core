@@ -1,4 +1,4 @@
-import { isRecallableMemoryEvidence } from '../recall/RecallGovernance.js';
+import { isOperationalNoiseText, isRecallableMemoryEvidence } from '../recall/RecallGovernance.js';
 export class KernelAgentMemoryBackend {
     kernel;
     constructor(kernel) {
@@ -239,6 +239,7 @@ export class KernelAgentMemoryBackend {
         });
         const rawItems = rawEvents
             .filter((event) => this.isAgentRawEvent(event, query.agentId))
+            .filter((event) => !this.isOperationalNoiseRawEvent(event))
             .slice(0, limit)
             .map((event) => this.toAgentRawRecallItem(event));
         return {
@@ -276,6 +277,17 @@ export class KernelAgentMemoryBackend {
         if (!event.sourceId)
             return true;
         return event.sourceId === agentId || event.sourceId.startsWith(`${agentId}:`);
+    }
+    isOperationalNoiseRawEvent(event) {
+        const payload = event.payload;
+        const tags = Array.isArray(payload.metadata?.tags) ? payload.metadata.tags : [];
+        if (tags.some((tag) => (tag === 'operational_noise'
+            || tag === 'record:heartbeat'
+            || tag === 'system:heartbeat'
+            || tag === 'routine:heartbeat'))) {
+            return true;
+        }
+        return isOperationalNoiseText(typeof payload.text === 'string' ? payload.text : JSON.stringify(event.payload));
     }
     toAgentRawRecallItem(event) {
         const payload = event.payload;

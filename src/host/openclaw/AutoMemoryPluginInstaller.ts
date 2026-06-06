@@ -181,6 +181,10 @@ function buildPatchedOpenClawConfig(input: {
       ingestMode: 'selective_compile',
       recallTimeoutMs: 30000,
       rememberTimeoutMs: 60000,
+      rememberStrategy: 'queued',
+      rememberQueuePath: '',
+      rememberDrainTimeoutMs: 60000,
+      rememberMaxAttempts: 3,
       auditLog: true,
     },
   };
@@ -227,6 +231,13 @@ function buildPluginFiles(): PluginFiles {
           },
           recallTimeoutMs: { type: 'number' },
           rememberTimeoutMs: { type: 'number' },
+          rememberStrategy: {
+            type: 'string',
+            enum: ['queued'],
+          },
+          rememberQueuePath: { type: 'string' },
+          rememberDrainTimeoutMs: { type: 'number' },
+          rememberMaxAttempts: { type: 'number' },
           auditLog: { type: 'boolean' },
           auditLogPath: { type: 'string' },
         },
@@ -240,7 +251,8 @@ function buildPluginFiles(): PluginFiles {
 function pluginIndexJs(): string {
   return String.raw`'use strict';
 
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { appendFileSync, mkdirSync } = require('node:fs');
 const path = require('node:path');
 
@@ -259,6 +271,10 @@ const DEFAULTS = {
   ingestMode: 'selective_compile',
   recallTimeoutMs: 30000,
   rememberTimeoutMs: 60000,
+  rememberStrategy: 'queued',
+  rememberQueuePath: '',
+  rememberDrainTimeoutMs: 60000,
+  rememberMaxAttempts: 3,
   auditLog: true,
   auditLogPath: '',
 };
@@ -338,6 +354,132 @@ function runBridge(command, payload, config, timeoutMs) {
     throw new Error((child.stderr || child.stdout || 'cogmem bridge failed').trim());
   }
   return child.stdout ? JSON.parse(child.stdout) : {};
+}
+
+function bridgeConfig(config) {
+  return {
+    configPath: config.configPath,
+    cwd: config.cwd,
+    bunPath: config.bunPath,
+    agentId: config.agentId,
+    projectId: config.projectId,
+    ingestMode: config.ingestMode,
+    rememberQueuePath: rememberQueuePath(config),
+    rememberMaxAttempts: config.rememberMaxAttempts || 3,
+  };
+}
+
+function rememberQueuePath(config) {
+  return config.rememberQueuePath || path.join(config.cwd || process.cwd(), '.cogmem', 'queue', 'openclaw-remember.jsonl');
+}
+
+function stableJobId(payload) {
+  return createHash('sha256')
+    .update(JSON.stringify({
+      sessionId: payload.sessionId,
+      userText: payload.userText,
+      assistantText: payload.assistantText,
+      toolCalls: payload.toolCalls,
+      toolResults: payload.toolResults,
+      taskEvents: payload.taskEvents,
+    }))
+    .digest('hex')
+    .slice(0, 32);
+}
+
+function enqueueRememberJob(config, payload) {
+  const queuePath = rememberQueuePath(config);
+  mkdirSync(path.dirname(queuePath), { recursive: true });
+  const job = {
+    jobId: stableJobId(payload),
+    createdAt: new Date().toISOString(),
+    attempts: 0,
+    payload,
+  };
+  appendFileSync(queuePath, JSON.stringify(job) + '\n');
+  return { jobId: job.jobId, queuePath };
+}
+
+function spawnBridgeDrain(config) {
+  const bridgePath = path.join(__dirname, 'bridge.mjs');
+  const child = spawn(config.bunPath || 'bun', [bridgePath, 'drain-remember-queue'], {
+    cwd: config.cwd || process.cwd(),
+    detached: true,
+    stdio: ['pipe', 'ignore', 'ignore'],
+  });
+  child.stdin.end(JSON.stringify({ config: bridgeConfig(config) }));
+  child.unref();
+}
+
+function arrayFrom(...values) {
+  const out = [];
+  for (const value of values) {
+    if (Array.isArray(value)) out.push(...value);
+  }
+  return out;
+}
+
+function normalizeToolCall(value, index) {
+  if (!value || typeof value !== 'object') return null;
+  const fn = value.function && typeof value.function === 'object' ? value.function : {};
+  const toolName = value.toolName || value.name || value.tool || fn.name;
+  if (!toolName) return null;
+  return {
+    toolCallId: String(value.toolCallId || value.callId || value.id || ''),
+    toolName: String(toolName),
+    input: value.input !== undefined ? value.input : (value.args !== undefined ? value.args : (value.arguments !== undefined ? value.arguments : fn.arguments)),
+    eventOrdinal: Number.isFinite(value.eventOrdinal) ? value.eventOrdinal : 3 + index * 2,
+    timestamp: Number.isFinite(value.timestamp) ? value.timestamp : undefined,
+    metadata: { sourceShape: 'openclaw_tool_call' },
+  };
+}
+
+function normalizeToolResult(value, index) {
+  if (!value || typeof value !== 'object') return null;
+  const toolName = value.toolName || value.name || value.tool;
+  const output = value.output !== undefined ? value.output : (value.result !== undefined ? value.result : value.content);
+  if (!toolName || output === undefined) return null;
+  return {
+    toolCallId: String(value.toolCallId || value.callId || value.id || ''),
+    toolName: String(toolName),
+    output: typeof output === 'string' ? output : JSON.stringify(output),
+    eventOrdinal: Number.isFinite(value.eventOrdinal) ? value.eventOrdinal : 4 + index * 2,
+    timestamp: Number.isFinite(value.timestamp) ? value.timestamp : undefined,
+    metadata: { sourceShape: 'openclaw_tool_result' },
+  };
+}
+
+function normalizeTaskEvent(value, index) {
+  if (!value || typeof value !== 'object') return null;
+  const content = value.content || value.text || value.message || value.summary;
+  if (!content) return null;
+  return {
+    taskId: value.taskId || value.id,
+    title: value.title || value.type || 'OpenClaw task event',
+    content: typeof content === 'string' ? content : JSON.stringify(content),
+    eventOrdinal: Number.isFinite(value.eventOrdinal) ? value.eventOrdinal : 100 + index,
+    timestamp: Number.isFinite(value.timestamp) ? value.timestamp : undefined,
+    metadata: { sourceShape: 'openclaw_task_event' },
+  };
+}
+
+function extractLifecyclePayload(event) {
+  const context = event && event.context || {};
+  const trace = event && event.trace || {};
+  return {
+    toolCalls: arrayFrom(event && event.toolCalls, event && event.tool_calls, context.toolCalls, context.tool_calls, trace.toolCalls, trace.tool_calls)
+      .map(normalizeToolCall)
+      .filter(Boolean)
+      .slice(0, 32),
+    toolResults: arrayFrom(event && event.toolResults, event && event.tool_results, context.toolResults, context.tool_results, trace.toolResults, trace.tool_results)
+      .map(normalizeToolResult)
+      .filter(Boolean)
+      .slice(0, 32),
+    taskEvents: arrayFrom(event && event.taskEvents, event && event.task_events, context.taskEvents, context.task_events, trace.taskEvents, trace.task_events)
+      .map(normalizeTaskEvent)
+      .filter(Boolean)
+      .slice(0, 32),
+  };
 }
 
 function logWarn(api, message) {
@@ -426,21 +568,27 @@ const plugin = {
       }
       seenTurns.set(sessionId, key);
       try {
-        const remembered = runBridge('remember', {
+        const lifecycle = extractLifecyclePayload(event);
+        const queued = enqueueRememberJob(config, {
           sessionId,
           userText,
           assistantText: assistantText.slice(0, config.maxAssistantChars || 12000),
-          config,
-        }, config, config.rememberTimeoutMs || 60000);
+          config: bridgeConfig(config),
+          ...lifecycle,
+        });
+        spawnBridgeDrain(config);
         audit(config, {
           hook: 'agent_end',
           sessionId,
-          action: 'remember',
+          action: 'enqueue_remember',
+          jobId: queued.jobId,
+          queuePath: queued.queuePath,
           userChars: userText.length,
           assistantChars: assistantText.length,
-          ingestMode: remembered.ingestMode,
-          compiled: remembered.compiled,
-          compileReason: remembered.compileReason,
+          toolCallCount: lifecycle.toolCalls.length,
+          toolResultCount: lifecycle.toolResults.length,
+          taskEventCount: lifecycle.taskEvents.length,
+          ingestMode: config.ingestMode || 'selective_compile',
         });
       } catch (error) {
         audit(config, {
@@ -462,7 +610,8 @@ module.exports.default = plugin;
 
 function pluginBridgeMjs(): string {
   return String.raw`#!/usr/bin/env bun
-import { readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { createMemoryKernelFromConfig, KernelAgentMemoryBackend } from '@CognitiveOS/core';
 
 const command = process.argv[2];
@@ -490,26 +639,171 @@ try {
       fallbackUsed: result.fallbackUsed,
     }));
   } else if (command === 'remember') {
-    const result = await memory.rememberTurnWithResult({
-      agentId: config.agentId || 'openclaw',
-      projectId: config.projectId || 'openclaw',
-      workspaceId: config.projectId || 'openclaw',
-      sessionId: input.sessionId || 'openclaw-session',
-      userText: input.userText || '',
-      assistantText: input.assistantText || '',
-      ingestMode: config.ingestMode || 'selective_compile',
-      timestamp: Date.now(),
-      metadata: {
-        source: 'openclaw-plugin',
-        pluginId: 'cogmem-auto-memory',
-      },
-    });
+    const result = await rememberPayload(input, config);
     console.log(JSON.stringify({ remembered: true, ...result }));
+  } else if (command === 'drain-remember-queue') {
+    const result = await drainRememberQueue(config);
+    console.log(JSON.stringify(result));
   } else {
     throw new Error('unknown cogmem bridge command: ' + command);
   }
 } finally {
   kernel.close();
+}
+
+async function rememberPayload(payload, bridgeConfig) {
+  const result = await memory.rememberTurnWithResult({
+    agentId: bridgeConfig.agentId || 'openclaw',
+    projectId: bridgeConfig.projectId || 'openclaw',
+    workspaceId: bridgeConfig.projectId || 'openclaw',
+    sessionId: payload.sessionId || 'openclaw-session',
+    userText: payload.userText || '',
+    assistantText: payload.assistantText || '',
+    ingestMode: bridgeConfig.ingestMode || 'selective_compile',
+    timestamp: Date.now(),
+    metadata: {
+      source: 'openclaw-plugin',
+      pluginId: 'cogmem-auto-memory',
+      lifecycle: 'turn',
+    },
+  });
+  const assistantEventId = result.rawEventIds[1];
+  const toolCallEventIds = new Map();
+  let toolCallCount = 0;
+  let toolResultCount = 0;
+  let taskEventCount = 0;
+
+  for (const call of Array.isArray(payload.toolCalls) ? payload.toolCalls : []) {
+    const event = await memory.ingestToolCall({
+      agentId: bridgeConfig.agentId || 'openclaw',
+      projectId: bridgeConfig.projectId || 'openclaw',
+      workspaceId: bridgeConfig.projectId || 'openclaw',
+      sessionId: payload.sessionId || 'openclaw-session',
+      assistantEventId,
+      toolCallId: call.toolCallId || undefined,
+      toolName: call.toolName || 'unknown_tool',
+      input: call.input,
+      eventOrdinal: call.eventOrdinal,
+      timestamp: call.timestamp,
+      metadata: call.metadata,
+    });
+    if (call.toolCallId) toolCallEventIds.set(call.toolCallId, event.eventId);
+    toolCallCount += 1;
+  }
+
+  for (const observation of Array.isArray(payload.toolResults) ? payload.toolResults : []) {
+    const toolCallEventId = observation.toolCallId ? toolCallEventIds.get(observation.toolCallId) : undefined;
+    if (toolCallEventId) {
+      await memory.ingestToolObservation({
+        agentId: bridgeConfig.agentId || 'openclaw',
+        projectId: bridgeConfig.projectId || 'openclaw',
+        workspaceId: bridgeConfig.projectId || 'openclaw',
+        sessionId: payload.sessionId || 'openclaw-session',
+        toolCallEventId,
+        toolCallId: observation.toolCallId || undefined,
+        toolName: observation.toolName || 'unknown_tool',
+        output: observation.output || '',
+        eventOrdinal: observation.eventOrdinal,
+        timestamp: observation.timestamp,
+        metadata: observation.metadata,
+      });
+      toolResultCount += 1;
+    } else {
+      await memory.ingestTaskEvent({
+        agentId: bridgeConfig.agentId || 'openclaw',
+        projectId: bridgeConfig.projectId || 'openclaw',
+        workspaceId: bridgeConfig.projectId || 'openclaw',
+        sessionId: payload.sessionId || 'openclaw-session',
+        parentEventId: assistantEventId,
+        title: 'Tool result without matching tool call',
+        content: observation.output || '',
+        eventOrdinal: observation.eventOrdinal,
+        timestamp: observation.timestamp,
+        metadata: {
+          ...(observation.metadata || {}),
+          toolCallId: observation.toolCallId,
+          toolName: observation.toolName,
+          causality: 'partial',
+          reason: 'missing_tool_call_event',
+        },
+      });
+      taskEventCount += 1;
+    }
+  }
+
+  for (const task of Array.isArray(payload.taskEvents) ? payload.taskEvents : []) {
+    await memory.ingestTaskEvent({
+      agentId: bridgeConfig.agentId || 'openclaw',
+      projectId: bridgeConfig.projectId || 'openclaw',
+      workspaceId: bridgeConfig.projectId || 'openclaw',
+      sessionId: payload.sessionId || 'openclaw-session',
+      parentEventId: assistantEventId,
+      taskId: task.taskId,
+      title: task.title,
+      content: task.content || '',
+      eventOrdinal: task.eventOrdinal,
+      timestamp: task.timestamp,
+      metadata: task.metadata,
+    });
+    taskEventCount += 1;
+  }
+
+  return {
+    ...result,
+    toolCallCount,
+    toolResultCount,
+    taskEventCount,
+  };
+}
+
+async function drainRememberQueue(bridgeConfig) {
+  const queuePath = bridgeConfig.rememberQueuePath;
+  if (!queuePath) throw new Error('missing rememberQueuePath');
+  mkdirSync(dirname(queuePath), { recursive: true });
+  if (!existsSync(queuePath)) return { drained: 0, failed: 0, locked: false };
+
+  const lockPath = queuePath + '.lock';
+  try {
+    mkdirSync(lockPath);
+  } catch {
+    return { drained: 0, failed: 0, locked: true };
+  }
+
+  const processingPath = queuePath + '.' + Date.now() + '.' + process.pid + '.processing';
+  let drained = 0;
+  let failed = 0;
+  try {
+    if (!existsSync(queuePath)) return { drained: 0, failed: 0, locked: false };
+    renameSync(queuePath, processingPath);
+    const lines = readFileSync(processingPath, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      let job;
+      try {
+        job = JSON.parse(line);
+        await rememberPayload(job.payload || {}, job.payload?.config || bridgeConfig);
+        drained += 1;
+      } catch (error) {
+        failed += 1;
+        const attempts = Number(job?.attempts || 0) + 1;
+        const failedJob = {
+          ...(job || { payload: { rawLine: line } }),
+          attempts,
+          lastError: error instanceof Error ? error.message : String(error),
+          lastErrorAt: new Date().toISOString(),
+        };
+        const maxAttempts = Number(bridgeConfig.rememberMaxAttempts || 3);
+        const targetPath = attempts < maxAttempts ? queuePath : queuePath + '.dead.jsonl';
+        appendFileSync(targetPath, JSON.stringify(failedJob) + '\n');
+      }
+    }
+    rmSync(processingPath, { force: true });
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
+  }
+  return { drained, failed, locked: false };
 }
 
 function formatRecallContext(result) {

@@ -108,6 +108,7 @@ export declare class KernelAgentMemoryBackend {
     private filterAgentEvidence;
     private toAgentRecallItem;
     private isAgentRawEvent;
+    private isOperationalNoiseRawEvent;
     private toAgentRawRecallItem;
     private toSourceRef;
     private shouldCompileTurn;

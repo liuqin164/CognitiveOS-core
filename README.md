@@ -291,7 +291,15 @@ To make OpenClaw automatically recall and record memory on every future turn, in
 ./node_modules/.bin/cogmem-connect openclaw --workspace . --auto --force
 ```
 
-`--auto` writes `<workspace>/extensions/cogmem-auto-memory/`, patches OpenClaw `plugins.load.paths`, and enables the plugin entry with `hooks.allowPromptInjection=true` and `hooks.allowConversationAccess=true`. The wrapper registers `before_prompt_build` for governed recall and `agent_end` for turn recording. It calls `KernelAgentMemoryBackend` through `@CognitiveOS/core` public API via a Bun bridge; core still does not import OpenClaw or become an OpenClaw runtime.
+`--auto` writes `<workspace>/extensions/cogmem-auto-memory/`, patches OpenClaw `plugins.load.paths`, and enables the plugin entry with `hooks.allowPromptInjection=true` and `hooks.allowConversationAccess=true`. The wrapper registers `before_prompt_build` for governed recall and `agent_end` for turn recording. `agent_end` uses queued remember by default: it appends a durable JSONL job under `.cogmem/queue/` and spawns a background drain process, so slow embeddings or SQLite writes do not block Telegram/gateway response delivery. It calls `KernelAgentMemoryBackend` through `@CognitiveOS/core` public API via a Bun bridge; core still does not import OpenClaw or become an OpenClaw runtime.
+
+When debugging recall, use:
+
+```bash
+./node_modules/.bin/cogmem-explain-recall --query "<user question>" --project openclaw --agent openclaw --json
+```
+
+The JSON explains `sourceAnchor`, `activationPath`, `whyMatched`, `filteredEvidence`, and `governanceReason`. Keep normal prompt injection compact; do not inject full debug output into ordinary agent turns.
 
 If an existing installation needs repair after an update:
 
