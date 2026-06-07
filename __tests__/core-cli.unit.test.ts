@@ -573,6 +573,55 @@ test('memory CLI lists and shows raw ledger events with source anchors', async (
   expect(shown.after[0].role).toBe('assistant');
 });
 
+test('memory CLI runs dream curator and lists governance candidates', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-memory-dream-cli-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\nvector_backend = "sqlite-vec"\n');
+
+  const kernel = createMemoryKernel({ dbPath: join(dir, '.cogmem', 'memory.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+  await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-memory-dream-cli',
+    userText: '请以后记住，我偏好本地优先，外部 provider 必须显式配置。',
+    assistantText: '明白，我会把本地优先和显式 provider 作为治理约束处理。',
+    ingestMode: 'raw_then_dream',
+  });
+  kernel.close();
+
+  const dreamProc = Bun.spawn({
+    cmd: ['bun', memoryBin, 'dream', '--config', configPath, '--project', 'demo', '--json'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const dreamOutput = await new Response(dreamProc.stdout).text();
+  const dreamError = await new Response(dreamProc.stderr).text();
+  expect(await dreamProc.exited).toBe(0);
+  expect(dreamError).toBe('');
+  const dreamed = JSON.parse(dreamOutput);
+  expect(dreamed.processedEventCount).toBe(2);
+  expect(dreamed.candidateCount).toBeGreaterThan(0);
+  expect(dreamed.status.undreamedRawCount).toBe(0);
+
+  const candidateProc = Bun.spawn({
+    cmd: ['bun', memoryBin, 'candidates', '--config', configPath, '--project', 'demo', '--json'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const candidateOutput = await new Response(candidateProc.stdout).text();
+  const candidateError = await new Response(candidateProc.stderr).text();
+  expect(await candidateProc.exited).toBe(0);
+  expect(candidateError).toBe('');
+  const queue = JSON.parse(candidateOutput);
+  expect(queue.total).toBeGreaterThan(0);
+  expect(JSON.stringify(queue)).toContain('本地优先');
+  expect(JSON.stringify(queue)).toContain('sourceAnchor');
+});
+
 test('unified cogmem CLI exposes memory audit commands', async () => {
   const proc = Bun.spawn({
     cmd: ['bun', join(coreRoot, 'src/bin/cogmem.ts'), '--help'],
@@ -588,6 +637,8 @@ test('unified cogmem CLI exposes memory audit commands', async () => {
   expect(exitCode).toBe(0);
   expect(output).toContain('memory');
   expect(output).toContain('audit/search/show raw and compiled memory');
+  expect(output).toContain('dream');
+  expect(output).toContain('candidates');
 });
 
 test('vector migration dry-run uses configured vector_dimension by default', async () => {

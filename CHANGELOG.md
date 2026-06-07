@@ -32,3 +32,4 @@
 - Added `compileAgentRecallQuery()` and `queryPlan` output for `KernelAgentMemoryBackend.recall()`, so long natural-language memory questions are distilled into bounded recall cues before semantic and raw-ledger lookup.
 - Added forensic follow-up anchors (`anchorEventId` / `anchorText`) so adapters can answer "what were my exact words" from the previous raw source event instead of guessing from a vague query or imported summary.
 - Added `cogmem memory` / `cogmem-memory` as a local audit console for status, raw ledger listing, raw text search, and event context drill-down.
+- Added `MemoryKernel.runDreamCurator()` and `listDreamCandidates()` plus `cogmem memory dream` / `cogmem memory candidates` so `raw_then_dream` produces source-anchored candidate memories and an auditable governance queue without creating vectors or verified facts.

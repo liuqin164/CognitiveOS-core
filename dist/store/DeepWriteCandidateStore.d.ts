@@ -35,6 +35,13 @@ export interface DeepWriteCandidateRecord extends DeepWriteCandidateInput {
     candidateId: string;
     createdAt: number;
 }
+export interface DeepWriteCandidateListOptions {
+    statuses?: DeepWriteCandidateStatus[];
+    candidateTypes?: string[];
+    projectId?: string;
+    runId?: string;
+    limit?: number;
+}
 export declare class DeepWriteCandidateStore {
     private readonly db;
     constructor(db: Database);
@@ -48,6 +55,8 @@ export declare class DeepWriteCandidateStore {
         candidateTypes?: string[];
         limit?: number;
     }): DeepWriteCandidateRecord[];
+    listCandidates(options?: DeepWriteCandidateListOptions): DeepWriteCandidateRecord[];
+    countCandidates(options?: Omit<DeepWriteCandidateListOptions, 'limit'>): number;
     updateCandidateStatus(candidateId: string, status: DeepWriteCandidateStatus, promotionTarget?: {
         type?: string;
         id?: string;

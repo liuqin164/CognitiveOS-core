@@ -23,6 +23,7 @@ import { ConsolidationTrigger } from './engine/ConsolidationTrigger.js';
 import { CrossTopicSynthesizer } from './engine/CrossTopicSynthesizer.js';
 import { CrossTopicTrigger } from './engine/CrossTopicTrigger.js';
 import { DeepWritePromotionPolicy } from './engine/DeepWritePromotionPolicy.js';
+import { DreamCuratorWorker, type DreamCuratorRunOptions, type DreamCuratorRunResult } from './engine/DreamCuratorWorker.js';
 import { EpisodicSemanticDistiller } from './engine/EpisodicSemanticDistiller.js';
 import { EntityResolutionEngine } from './engine/EntityResolutionEngine.js';
 import { FactCompiler } from './engine/FactCompiler.js';
@@ -63,7 +64,7 @@ import { createConfiguredEmbedder } from './store/EmbedderFactory.js';
 import type { Embedder } from './store/Embedder.js';
 import { CognitiveGraphStore } from './store/CognitiveGraphStore.js';
 import { CompilerConfidenceStore } from './store/CompilerConfidenceStore.js';
-import { DeepWriteCandidateStore } from './store/DeepWriteCandidateStore.js';
+import { DeepWriteCandidateStore, type DeepWriteCandidateStatus } from './store/DeepWriteCandidateStore.js';
 import { DreamLedgerStore, type DreamBacklogStatus } from './store/DreamLedgerStore.js';
 import { EntityStore } from './store/EntityStore.js';
 import { EventStore } from './store/EventStore.js';
@@ -96,6 +97,8 @@ import {
 
 const CORE_VERSION = '2.0.0-rc.1';
 const LATEST_SCHEMA_VERSION = 12;
+
+export type { DreamCuratorRunOptions, DreamCuratorRunResult } from './engine/DreamCuratorWorker.js';
 
 export interface MemoryKernelOptions {
   dbPath?: string;
@@ -136,6 +139,29 @@ export interface RawEventSearchOptions {
   localDate?: string;
   startTime?: number;
   endTime?: number;
+  limit?: number;
+}
+
+export type DreamCandidateStatus = DeepWriteCandidateStatus;
+
+export interface DreamCandidateRecord {
+  candidateId: string;
+  runId: string;
+  candidateType: string;
+  status: DreamCandidateStatus;
+  confidence: number;
+  content: unknown;
+  evidence: unknown;
+  promotionTargetType?: string;
+  promotionTargetId?: string;
+  createdAt: number;
+}
+
+export interface DreamCandidateListOptions {
+  statuses?: DreamCandidateStatus[];
+  candidateTypes?: string[];
+  projectId?: string;
+  runId?: string;
   limit?: number;
 }
 
@@ -281,6 +307,7 @@ export class MemoryKernel {
   private readonly compilerConfidenceStore: CompilerConfidenceStore;
   private readonly summaryStore: SummaryStore;
   private readonly deepWriteCandidateStore: DeepWriteCandidateStore;
+  private readonly dreamCuratorWorker: DreamCuratorWorker;
   private readonly topicSummaryBoard: TopicSummaryBoard;
   private readonly topicDecayPolicy: TopicDecayPolicy;
   private readonly localSemanticCompiler: LocalSemanticCompiler;
@@ -332,6 +359,11 @@ export class MemoryKernel {
     this.summaryStore = new SummaryStore(db);
     this.summaryStore.migrateLegacyFactSummaries();
     this.deepWriteCandidateStore = new DeepWriteCandidateStore(db);
+    this.dreamCuratorWorker = new DreamCuratorWorker({
+      eventStore: this.eventStore,
+      dreamLedgerStore: this.dreamLedgerStore,
+      candidateStore: this.deepWriteCandidateStore,
+    });
     this.topicSummaryBoard = new TopicSummaryBoard(this.memoryGraph, this.summaryStore);
     this.topicDecayPolicy = new TopicDecayPolicy(this.memoryGraph);
     this.localSemanticCompiler = new LocalSemanticCompiler();
@@ -877,6 +909,18 @@ export class MemoryKernel {
 
   markDreamed(projectId: string | undefined, globalSeq: number, dreamedAt?: number): DreamBacklogStatus {
     return this.dreamLedgerStore.markDreamed(projectId, globalSeq, dreamedAt);
+  }
+
+  async runDreamCurator(options: DreamCuratorRunOptions = {}): Promise<DreamCuratorRunResult> {
+    return this.dreamCuratorWorker.run(options);
+  }
+
+  listDreamCandidates(options: DreamCandidateListOptions = {}): DreamCandidateRecord[] {
+    return this.deepWriteCandidateStore.listCandidates(options);
+  }
+
+  countDreamCandidates(options: Omit<DreamCandidateListOptions, 'limit'> = {}): number {
+    return this.deepWriteCandidateStore.countCandidates(options);
   }
 
   async exportSnapshot(outputPath: string): Promise<SnapshotMeta> {

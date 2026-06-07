@@ -25,6 +25,20 @@ For agent lifecycle events, source refs may point to `message`, `tool_call`, `to
 
 Forensic follow-ups can pass `anchorEventId` or `anchorText` from a previous recall item. The backend then prefers the anchored raw event for questions such as "what exactly did I say" instead of letting a vague query drift to unrelated imported summaries. Imported summaries and compiled memories still set `canAnswerExactQuote=false`; only raw source events with anchors can support exact wording.
 
+## Dream Candidate Audit
+
+`raw_then_dream` makes dream backlog visible before semantic compilation happens. `cogmem memory dream` runs the local curator over undreamed raw events and `cogmem memory candidates` shows the resulting governance queue.
+
+Each candidate includes:
+
+- `candidateType`: summary, preferences, contradictions, causalLinks, or another governed category.
+- `status`: usually `candidate` or `shadow` until a CPU governance policy reviews it.
+- `confidence`: a bounded extraction confidence, not truth confidence.
+- `content`: the proposed memory payload.
+- `evidence`: raw event anchors with `eventId`, role, global/thread order, parent/previous links, and source text excerpts.
+
+Candidates explain organization, not truth. A preference candidate can show that the user explicitly said a constraint, but it is still queued for governance. A tool-result causal candidate can show that one tool result belongs to a tool call, but it must not become a verified real-world fact merely because the tool returned text.
+
 ## Filtered Evidence
 
 `filteredEvidence` records same-project candidates that were considered but did not enter active context. Reasons include:
@@ -54,5 +68,7 @@ Use the local audit CLI when the user needs to inspect memory directly:
 - `cogmem memory list`
 - `cogmem memory search --query <text>`
 - `cogmem memory show --event <eventId> --before 2 --after 2`
+- `cogmem memory dream --project <project>`
+- `cogmem memory candidates --project <project> --status candidate`
 
 Ledger replay can show raw evidence. It must not replace governed recall, pulse activation, inhibition, or ContextPack budgeting.

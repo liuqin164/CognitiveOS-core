@@ -15,7 +15,7 @@
  * @stable @since 1.0.0
  */
 export { MemoryKernel, createMemoryKernel, createMemoryKernelFromConfig, } from './factory.js';
-export type { ForgetUserResult, GovernanceAuditRecord, MemoryKernelFromConfigOptions, MemoryKernelNavigationOptions, MemoryKernelNavigationResult, MemoryKernelOptions, RawEventSearchOptions, RawMemoryEventInput, TaskMemoryEventInput, ToolCallMemoryEventInput, ToolResultMemoryEventInput, } from './factory.js';
+export type { ForgetUserResult, GovernanceAuditRecord, DreamCandidateListOptions, DreamCandidateRecord, DreamCandidateStatus, DreamCuratorRunOptions, DreamCuratorRunResult, MemoryKernelFromConfigOptions, MemoryKernelNavigationOptions, MemoryKernelNavigationResult, MemoryKernelOptions, RawEventSearchOptions, RawMemoryEventInput, TaskMemoryEventInput, ToolCallMemoryEventInput, ToolResultMemoryEventInput, } from './factory.js';
 /**
  * Cogmem runtime home and structured configuration helpers.
  * @stable @since 2.0.0

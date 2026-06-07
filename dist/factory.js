@@ -18,6 +18,7 @@ import { ConsolidationTrigger } from './engine/ConsolidationTrigger.js';
 import { CrossTopicSynthesizer } from './engine/CrossTopicSynthesizer.js';
 import { CrossTopicTrigger } from './engine/CrossTopicTrigger.js';
 import { DeepWritePromotionPolicy } from './engine/DeepWritePromotionPolicy.js';
+import { DreamCuratorWorker } from './engine/DreamCuratorWorker.js';
 import { EpisodicSemanticDistiller } from './engine/EpisodicSemanticDistiller.js';
 import { EntityResolutionEngine } from './engine/EntityResolutionEngine.js';
 import { FactCompiler } from './engine/FactCompiler.js';
@@ -91,6 +92,7 @@ export class MemoryKernel {
     compilerConfidenceStore;
     summaryStore;
     deepWriteCandidateStore;
+    dreamCuratorWorker;
     topicSummaryBoard;
     topicDecayPolicy;
     localSemanticCompiler;
@@ -142,6 +144,11 @@ export class MemoryKernel {
         this.summaryStore = new SummaryStore(db);
         this.summaryStore.migrateLegacyFactSummaries();
         this.deepWriteCandidateStore = new DeepWriteCandidateStore(db);
+        this.dreamCuratorWorker = new DreamCuratorWorker({
+            eventStore: this.eventStore,
+            dreamLedgerStore: this.dreamLedgerStore,
+            candidateStore: this.deepWriteCandidateStore,
+        });
         this.topicSummaryBoard = new TopicSummaryBoard(this.memoryGraph, this.summaryStore);
         this.topicDecayPolicy = new TopicDecayPolicy(this.memoryGraph);
         this.localSemanticCompiler = new LocalSemanticCompiler();
@@ -603,6 +610,15 @@ export class MemoryKernel {
     }
     markDreamed(projectId, globalSeq, dreamedAt) {
         return this.dreamLedgerStore.markDreamed(projectId, globalSeq, dreamedAt);
+    }
+    async runDreamCurator(options = {}) {
+        return this.dreamCuratorWorker.run(options);
+    }
+    listDreamCandidates(options = {}) {
+        return this.deepWriteCandidateStore.listCandidates(options);
+    }
+    countDreamCandidates(options = {}) {
+        return this.deepWriteCandidateStore.countCandidates(options);
     }
     async exportSnapshot(outputPath) {
         const exporter = new SnapshotExporter({

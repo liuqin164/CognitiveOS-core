@@ -122,6 +122,66 @@ export class DeepWriteCandidateStore {
         const rows = this.db.prepare(sql).all(...params);
         return rows.map((row) => this.mapCandidate(row));
     }
+    listCandidates(options = {}) {
+        const params = [];
+        const conditions = [];
+        let sql = `
+      SELECT c.*
+      FROM deep_write_candidates c
+      JOIN deep_write_runs r ON r.run_id = c.run_id
+    `;
+        if (options.statuses?.length) {
+            conditions.push(`c.status IN (${options.statuses.map(() => '?').join(', ')})`);
+            params.push(...options.statuses);
+        }
+        if (options.candidateTypes?.length) {
+            conditions.push(`c.candidate_type IN (${options.candidateTypes.map(() => '?').join(', ')})`);
+            params.push(...options.candidateTypes);
+        }
+        if (options.projectId) {
+            conditions.push('r.project_id = ?');
+            params.push(options.projectId);
+        }
+        if (options.runId) {
+            conditions.push('c.run_id = ?');
+            params.push(options.runId);
+        }
+        if (conditions.length)
+            sql += ` WHERE ${conditions.join(' AND ')}`;
+        sql += ` ORDER BY c.created_at ASC, c.candidate_id ASC LIMIT ?`;
+        params.push(options.limit ?? 100);
+        const rows = this.db.prepare(sql).all(...params);
+        return rows.map((row) => this.mapCandidate(row));
+    }
+    countCandidates(options = {}) {
+        const params = [];
+        const conditions = [];
+        let sql = `
+      SELECT COUNT(*) AS count
+      FROM deep_write_candidates c
+      JOIN deep_write_runs r ON r.run_id = c.run_id
+    `;
+        if (options.statuses?.length) {
+            conditions.push(`c.status IN (${options.statuses.map(() => '?').join(', ')})`);
+            params.push(...options.statuses);
+        }
+        if (options.candidateTypes?.length) {
+            conditions.push(`c.candidate_type IN (${options.candidateTypes.map(() => '?').join(', ')})`);
+            params.push(...options.candidateTypes);
+        }
+        if (options.projectId) {
+            conditions.push('r.project_id = ?');
+            params.push(options.projectId);
+        }
+        if (options.runId) {
+            conditions.push('c.run_id = ?');
+            params.push(options.runId);
+        }
+        if (conditions.length)
+            sql += ` WHERE ${conditions.join(' AND ')}`;
+        const row = this.db.prepare(sql).get(...params);
+        return row?.count || 0;
+    }
     updateCandidateStatus(candidateId, status, promotionTarget) {
         this.db.prepare(`
       UPDATE deep_write_candidates

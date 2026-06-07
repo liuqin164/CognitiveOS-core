@@ -125,6 +125,16 @@ Turn recording supports four modes:
 
 For OpenClaw/Hermes automatic turn recording with high-dimensional Qwen embeddings, prefer `selective_compile` or `raw_then_dream`. This keeps full raw evidence while avoiding a high-dimensional vector for every sentence.
 
+Run the local dream curator when `raw_then_dream` backlog exists:
+
+```ts
+const result = await kernel.runDreamCurator({ projectId: 'workspace-a', limit: 100 });
+console.log(result.candidateCount);
+console.log(kernel.listDreamCandidates({ projectId: 'workspace-a', statuses: ['candidate'] }));
+```
+
+The curator is deterministic and candidate-only. It reads undreamed raw ledger events in `globalSeq` order, suppresses operational noise, proposes summaries, user preferences, project constraints, corrections, and causal/tool-observation candidates, and stores them in the deep-write governance queue with raw event source anchors. It does not create hot vectors and does not promote candidates to verified facts.
+
 ## Memory Model
 
 Core separates raw chronological evidence from ranked recall. The Chronological Memory Ledger records ordered raw events for replay and audit; governed recall ranks memories by relevance, importance, confidence, recency, scope, pulse activation, and inhibition.
@@ -417,9 +427,11 @@ Memory audit console:
 ./node_modules/.bin/cogmem memory list --project openclaw --json
 ./node_modules/.bin/cogmem memory search --query "记忆 黑盒" --project openclaw --json
 ./node_modules/.bin/cogmem memory show --event evt-... --before 2 --after 2 --json
+./node_modules/.bin/cogmem memory dream --project openclaw --json
+./node_modules/.bin/cogmem memory candidates --project openclaw --status candidate --json
 ```
 
-`cogmem memory` is intentionally a local provenance console, not a wiki, Obsidian replacement, or hosted dashboard. Use it to inspect raw ledger anchors, source context, vector pressure, and dream backlog coverage when the injected prompt context feels like a black box.
+`cogmem memory` is intentionally a local provenance console, not a wiki, Obsidian replacement, or hosted dashboard. Use it to inspect raw ledger anchors, source context, vector pressure, dream backlog coverage, and the candidate governance queue when the injected prompt context feels like a black box.
 
 Benchmark groups are documented in `BENCHMARKS.md`; `memory_natural_emergence` tracks recall, inhibition, leakage, provenance, budget, and pulse expansion metrics.
 
@@ -427,7 +439,7 @@ Benchmark groups are documented in `BENCHMARKS.md`; `memory_natural_emergence` t
 
 The package entrypoint exports explicit stable and beta symbols only. Internal implementation stores and compilers are not exported from `@CognitiveOS/core`.
 
-Stable integration APIs include `MemoryKernel`, `createMemoryKernelFromConfig()`, `KernelAgentMemoryBackend`, `compileAgentRecallQuery()`, `OpenClawWorkspaceProfile`, and `HermesWorkspaceProfile`. Advanced recall orchestration symbols such as `UniverseNavigator`, `PulseRetrievalEngine`, `TemporalBranchSearch`, `NarrativeRecallAssembler`, `explainRecallWithKernel`, and the `listCogmemMcpTools` / `callCogmemMcpTool` helpers are exported as beta APIs for agents that need direct inspection, custom routing, or MCP hosting.
+Stable integration APIs include `MemoryKernel`, `createMemoryKernelFromConfig()`, `KernelAgentMemoryBackend`, `compileAgentRecallQuery()`, `runDreamCurator()` / `listDreamCandidates()` on `MemoryKernel`, `OpenClawWorkspaceProfile`, and `HermesWorkspaceProfile`. Advanced recall orchestration symbols such as `UniverseNavigator`, `PulseRetrievalEngine`, `TemporalBranchSearch`, `NarrativeRecallAssembler`, `explainRecallWithKernel`, and the `listCogmemMcpTools` / `callCogmemMcpTool` helpers are exported as beta APIs for agents that need direct inspection, custom routing, or MCP hosting.
 
 ## Development
 

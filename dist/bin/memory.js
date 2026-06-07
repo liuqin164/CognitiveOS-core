@@ -23,6 +23,7 @@ function readArgs(argv) {
         command,
         query: stringArg(values, 'query') || stringArg(values, 'q'),
         eventId: stringArg(values, 'event') || stringArg(values, 'event-id'),
+        status: candidateStatusArg(values, 'status'),
         projectId: stringArg(values, 'project') || stringArg(values, 'project-id'),
         workspaceId: stringArg(values, 'workspace') || stringArg(values, 'workspace-id'),
         threadId: stringArg(values, 'thread') || stringArg(values, 'thread-id'),
@@ -38,13 +39,15 @@ function readArgs(argv) {
 }
 function usage() {
     return [
-        'Usage: cogmem memory <status|list|search|show> [args]',
+        'Usage: cogmem memory <status|list|search|show|dream|candidates> [args]',
         '',
         'Commands:',
         '  status               summarize raw ledger, vector, and dream backlog state',
         '  list                 list raw ledger events with source anchors',
         '  search --query <q>   search raw ledger text without requiring hot vectors',
         '  show --event <id>    show one raw event with surrounding context',
+        '  dream                run the local dream curator over undreamed raw events',
+        '  candidates           list dream/deep-write governance candidates',
         '',
         'Common options:',
         '  --project <id>       scope to one project',
@@ -52,6 +55,7 @@ function usage() {
         '  --thread <id>        scope to one thread',
         '  --session <id>       scope to one session',
         '  --limit <n>          result limit, default 20',
+        '  --status <status>    candidate queue status, default candidate',
         '  --db <memory.db>     open an explicit database path',
         '  --config <toml>      open a cogmem TOML config',
         '  --json               print machine-readable JSON',
@@ -60,7 +64,12 @@ function usage() {
     ].join('\n');
 }
 function isMemoryCommand(value) {
-    return value === 'status' || value === 'list' || value === 'search' || value === 'show';
+    return value === 'status'
+        || value === 'list'
+        || value === 'search'
+        || value === 'show'
+        || value === 'dream'
+        || value === 'candidates';
 }
 function stringArg(values, key) {
     const value = values[key];
@@ -74,6 +83,20 @@ function numberArg(values, key) {
     if (!Number.isFinite(parsed) || parsed < 0)
         throw new Error(`--${key} must be a non-negative number`);
     return parsed;
+}
+function candidateStatusArg(values, key) {
+    const raw = stringArg(values, key);
+    if (!raw)
+        return undefined;
+    if (raw === 'shadow'
+        || raw === 'candidate'
+        || raw === 'promoted'
+        || raw === 'rejected'
+        || raw === 'needs_confirmation'
+        || raw === 'superseded') {
+        return raw;
+    }
+    throw new Error(`--${key} must be one of shadow, candidate, promoted, rejected, needs_confirmation, superseded`);
 }
 function openKernel(args) {
     if (args.dbPath)
@@ -124,6 +147,20 @@ function eventToJson(event) {
         },
     };
 }
+function candidateToJson(candidate) {
+    return {
+        candidateId: candidate.candidateId,
+        runId: candidate.runId,
+        candidateType: candidate.candidateType,
+        status: candidate.status,
+        confidence: candidate.confidence,
+        content: candidate.content,
+        evidence: candidate.evidence,
+        promotionTargetType: candidate.promotionTargetType,
+        promotionTargetId: candidate.promotionTargetId,
+        createdAt: candidate.createdAt,
+    };
+}
 function runStatus(kernel, args) {
     const page = kernel.eventStore.queryEvents(1, 1, {
         projectId: args.projectId ? [args.projectId] : undefined,
@@ -135,6 +172,11 @@ function runStatus(kernel, args) {
         rawEventCount: page.total,
         vectorCount: kernel.vectorStore.getCurrentCount(),
         dreamBacklog: kernel.getDreamBacklogStatus(args.projectId),
+        dreamCandidateQueue: {
+            candidate: kernel.countDreamCandidates({ projectId: args.projectId, statuses: ['candidate'] }),
+            needsConfirmation: kernel.countDreamCandidates({ projectId: args.projectId, statuses: ['needs_confirmation'] }),
+            shadow: kernel.countDreamCandidates({ projectId: args.projectId, statuses: ['shadow'] }),
+        },
     };
 }
 function runList(kernel, args) {
@@ -182,11 +224,48 @@ function runShow(kernel, args) {
         children: context.children.map(eventToJson),
     };
 }
+async function runDream(kernel, args) {
+    const result = await kernel.runDreamCurator({
+        projectId: args.projectId,
+        limit: args.limit || 100,
+    });
+    return {
+        ...result,
+        candidates: result.candidates.map(candidateToJson),
+    };
+}
+function runCandidates(kernel, args) {
+    const candidates = kernel.listDreamCandidates({
+        projectId: args.projectId,
+        statuses: [args.status || 'candidate'],
+        limit: args.limit || 50,
+    });
+    return {
+        total: candidates.length,
+        status: args.status || 'candidate',
+        candidates: candidates.map(candidateToJson),
+    };
+}
 function printHuman(command, payload) {
     if (command === 'status') {
         console.log(`rawEvents: ${payload.rawEventCount}`);
         console.log(`vectors: ${payload.vectorCount}`);
         console.log(`dreamBacklog: ${JSON.stringify(payload.dreamBacklog)}`);
+        console.log(`dreamCandidateQueue: ${JSON.stringify(payload.dreamCandidateQueue)}`);
+        return;
+    }
+    if (command === 'dream') {
+        console.log(`processedEvents: ${payload.processedEventCount}`);
+        console.log(`dreamableEvents: ${payload.dreamableEventCount}`);
+        console.log(`candidates: ${payload.candidateCount}`);
+        console.log(`dreamBacklog: ${JSON.stringify(payload.status)}`);
+        return;
+    }
+    if (command === 'candidates') {
+        const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+        for (const candidate of candidates) {
+            console.log(`- ${candidate.candidateId} ${candidate.candidateType} ${candidate.status} confidence=${candidate.confidence}`);
+        }
         return;
     }
     const events = Array.isArray(payload.events) ? payload.events : [payload.event].filter(Boolean);
@@ -219,7 +298,11 @@ async function main() {
                 ? runList(kernel, args)
                 : args.command === 'search'
                     ? runSearch(kernel, args)
-                    : runShow(kernel, args);
+                    : args.command === 'show'
+                        ? runShow(kernel, args)
+                        : args.command === 'dream'
+                            ? await runDream(kernel, args)
+                            : runCandidates(kernel, args);
         if (args.json) {
             console.log(JSON.stringify(payload, null, 2));
             return;

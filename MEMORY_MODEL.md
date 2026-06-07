@@ -11,7 +11,7 @@ It is not a vector RAG store, a knowledge-base application, a wiki, an Obsidian 
 - Raw Search Index: FTS/metadata search over raw ledger text for exact source discovery without requiring every event to keep a high-dimensional vector.
 - Compiled Memory: write-time facts, beliefs, events, summaries, graph links, and governance state derived from raw evidence.
 - Dream Backlog: observable consolidation coverage over raw events so `raw_then_dream` does not silently become unprocessed log accumulation.
-- Dream Candidates: optional background curator output such as user preference candidates, project constraints, diagnostic memories, topic summaries, and temporal invalidation suggestions. These remain candidates with source refs, confidence, and governance status; an LLM helper must not directly rewrite verified memory.
+- Dream Candidates: local curator output such as user preference candidates, project constraints, diagnostic memories, topic summaries, corrections, causal/tool-observation links, and temporal invalidation suggestions. These remain candidates with source refs, confidence, and governance status; an LLM helper must not directly rewrite verified memory.
 - Active Core: a very small current operating context maintained by the host agent or adapter, not all history.
 - Associative Graph: pulse-activated local graph, topic, entity, temporal, and cognitive adjacency candidates.
 - Recall Pack / ContextPack: the limited governed context returned for the current agent task.
@@ -49,6 +49,21 @@ Provider facades record raw lifecycle events without importing host runtimes:
 
 Tool observations are stored as external-tool evidence candidates. They are not promoted into verified facts merely because they were observed or later recalled.
 
+## Dream Curator
+
+`raw_then_dream` stores full raw evidence first and defers semantic compilation. `MemoryKernel.runDreamCurator({ projectId, limit })` processes undreamed raw events in `globalSeq` order and writes candidate records to the deep-write governance queue. It advances dream ledger coverage only after the batch is recorded, and it never deletes raw events.
+
+The built-in curator is deterministic and local-first. It suppresses operational noise such as heartbeat polls, builds a window summary, extracts explicit user preference / constraint / goal candidates, records correction candidates, and captures tool-result causal candidates when parent-child raw event links exist. Every candidate evidence item includes a raw `eventId`, role, chronological fields, and `sourceAnchor`.
+
+Dream candidates are not active long-term facts by default. They enter the queue with status `candidate` or `shadow`, below the normal automatic-promotion threshold, and can be inspected with:
+
+```bash
+cogmem memory dream --project <project> --json
+cogmem memory candidates --project <project> --status candidate --json
+```
+
+Promotion is a separate CPU-governed step handled by the deep-write promotion policy. Missing evidence, inference-only content, low confidence, assistant/tool-only observations, or unsupported causal links remain `needs_confirmation` or stay candidates. This preserves the rule that dreaming can organize memory but cannot silently turn model guesses or tool output into verified truth.
+
 ## Recall Ranking
 
 chronological order is not recall ranking.
@@ -80,7 +95,7 @@ Compatible mechanisms translated into the kernel model:
 - Memory tier names: used as documentation and API explanation only.
 - Provider lifecycle: routed through `KernelAgentMemoryBackend` and narrow adapters, never through host runtime imports.
 - Behavior memory: stored as candidate/provisional governed memory with source refs and confidence, not as automatically verified fact.
-- Dreaming-style consolidation: acceptable only as a local-first curator that proposes categorized candidates and summaries from raw ledger windows. It may classify user preferences, project constraints, procedures, failures, diagnostic memories, topic summaries, and temporal supersession candidates, but CPU governance must decide promotion and every candidate must retain source refs.
+- Dreaming-style consolidation: implemented as a local-first curator that proposes categorized candidates and summaries from raw ledger windows. It may classify user preferences, project constraints, procedures, failures, diagnostic memories, topic summaries, corrections, causal tool observations, and temporal supersession candidates, but CPU governance must decide promotion and every candidate must retain source refs.
 - Benchmark ideas: expressed as natural-emergence metrics that test recall and inhibition together.
 
 Rejected designs:

@@ -28,7 +28,7 @@ function usage() {
         '  connect openclaw     install OpenClaw/Hermes integration files; use --auto for OpenClaw runtime hooks',
         '  update               show or run package update command',
         '  compact              dry-run or apply vector-only storage compaction',
-        '  memory               audit/search/show raw and compiled memory',
+        '  memory               audit/search/show raw and compiled memory; run dream/candidates queue',
         '  import-openclaw      import OpenClaw memory files',
         '  import-hermes        import Hermes memory files',
         '  explain-recall       explain governed recall',

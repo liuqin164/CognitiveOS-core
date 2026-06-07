@@ -263,6 +263,27 @@ export class EventStore {
             return null;
         return this.mapRow(row);
     }
+    listRawEventsAfterGlobalSeq(options = {}) {
+        const conditions = [`event_type = 'RAW_EVENT_RECORDED'`];
+        const params = [];
+        if (options.projectId) {
+            conditions.push('project_id = ?');
+            params.push(options.projectId);
+        }
+        if (options.afterGlobalSeq !== undefined) {
+            conditions.push('COALESCE(global_seq, 0) > ?');
+            params.push(options.afterGlobalSeq);
+        }
+        params.push(Math.max(1, options.limit ?? 100));
+        const rows = this.db.prepare(`
+      SELECT ${MEMORY_EVENT_COLUMNS}
+      FROM memory_events
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY COALESCE(global_seq, 0) ASC, occurred_at ASC, event_id ASC
+      LIMIT ?
+    `).all(...params);
+        return rows.map((row) => this.mapRow(row));
+    }
     getEventsByStreamId(streamId) {
         const rows = this.db.prepare(`
       SELECT ${MEMORY_EVENT_COLUMNS}

@@ -20,7 +20,7 @@ This release candidate is GitHub-only. The package is not published to npm.
   - `cogmem-connect`
   - `cogmem-update`
   - `cogmem-compact`
-  - `cogmem-memory`
+  - `cogmem-memory` with status/list/search/show/dream/candidates subcommands
   - `cogmem-explain-recall`
   - `cogmem-mcp`
   - `cogmem-import-openclaw`

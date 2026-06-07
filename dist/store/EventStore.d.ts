@@ -58,6 +58,11 @@ export declare class EventStore {
     getNextTurnSeq(threadId: string): number;
     getEventsAfter(lastEventTime?: number): MemoryEvent[];
     getLatestEvent(): MemoryEvent | null;
+    listRawEventsAfterGlobalSeq(options?: {
+        projectId?: string;
+        afterGlobalSeq?: number;
+        limit?: number;
+    }): MemoryEvent[];
     getEventsByStreamId(streamId: string): MemoryEvent[];
     queryEvents(page?: number, pageSize?: number, filters?: {
         streamId?: string[];

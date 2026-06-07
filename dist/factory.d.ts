@@ -4,6 +4,7 @@ import { MemoryGraph } from './core/MemoryGraph.js';
 import { type BrainRecallOptions } from './recall/BrainRecall.js';
 import { type RecallGovernanceSuppressionReason } from './recall/RecallGovernance.js';
 import { TopicRegistry } from './recall/TopicRegistry.js';
+import { type DreamCuratorRunOptions, type DreamCuratorRunResult } from './engine/DreamCuratorWorker.js';
 import { type OfflineConsolidationOutput } from './engine/OfflineConsolidationPipeline.js';
 import { PipelineMetrics } from './engine/PipelineMetrics.js';
 import { type UniverseNavigationResult } from './retrieval/UniverseNavigator.js';
@@ -16,6 +17,7 @@ import { type EnvLike } from './config/CogmemConfig.js';
 import { ModelRegistry } from './models/ModelRegistry.js';
 import type { Embedder } from './store/Embedder.js';
 import { CognitiveGraphStore } from './store/CognitiveGraphStore.js';
+import { type DeepWriteCandidateStatus } from './store/DeepWriteCandidateStore.js';
 import { DreamLedgerStore, type DreamBacklogStatus } from './store/DreamLedgerStore.js';
 import { EntityStore } from './store/EntityStore.js';
 import { EventStore } from './store/EventStore.js';
@@ -25,6 +27,7 @@ import { TopologyStore } from './store/TopologyStore.js';
 import type { IVectorStore, VectorBackend } from './store/IVectorStore.js';
 import type { IngestInput, MemoryEvent, MemoryEventCausalityType, MemoryEventContext, MemoryRawEventType, MemoryEventRole, Neuron } from './types/index.js';
 import { type ImportOptions, type ImportResult, type SnapshotMeta } from './snapshot/index.js';
+export type { DreamCuratorRunOptions, DreamCuratorRunResult } from './engine/DreamCuratorWorker.js';
 export interface MemoryKernelOptions {
     dbPath?: string;
     embedder?: Embedder;
@@ -60,6 +63,26 @@ export interface RawEventSearchOptions {
     localDate?: string;
     startTime?: number;
     endTime?: number;
+    limit?: number;
+}
+export type DreamCandidateStatus = DeepWriteCandidateStatus;
+export interface DreamCandidateRecord {
+    candidateId: string;
+    runId: string;
+    candidateType: string;
+    status: DreamCandidateStatus;
+    confidence: number;
+    content: unknown;
+    evidence: unknown;
+    promotionTargetType?: string;
+    promotionTargetId?: string;
+    createdAt: number;
+}
+export interface DreamCandidateListOptions {
+    statuses?: DreamCandidateStatus[];
+    candidateTypes?: string[];
+    projectId?: string;
+    runId?: string;
     limit?: number;
 }
 export interface RawMemoryEventInput {
@@ -192,6 +215,7 @@ export declare class MemoryKernel {
     private readonly compilerConfidenceStore;
     private readonly summaryStore;
     private readonly deepWriteCandidateStore;
+    private readonly dreamCuratorWorker;
     private readonly topicSummaryBoard;
     private readonly topicDecayPolicy;
     private readonly localSemanticCompiler;
@@ -261,6 +285,9 @@ export declare class MemoryKernel {
     searchRawEvents(query: string, options?: RawEventSearchOptions): MemoryEvent[];
     getDreamBacklogStatus(projectId?: string): DreamBacklogStatus;
     markDreamed(projectId: string | undefined, globalSeq: number, dreamedAt?: number): DreamBacklogStatus;
+    runDreamCurator(options?: DreamCuratorRunOptions): Promise<DreamCuratorRunResult>;
+    listDreamCandidates(options?: DreamCandidateListOptions): DreamCandidateRecord[];
+    countDreamCandidates(options?: Omit<DreamCandidateListOptions, 'limit'>): number;
     exportSnapshot(outputPath: string): Promise<SnapshotMeta>;
     importSnapshot(snapshotPath: string, opts?: ImportOptions): Promise<ImportResult>;
     getHealthStatus(): {

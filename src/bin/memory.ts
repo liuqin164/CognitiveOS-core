@@ -2,12 +2,14 @@
 import { resolve } from 'node:path';
 
 import { createMemoryKernel, createMemoryKernelFromConfig, type MemoryKernel } from '../factory.js';
+import type { DeepWriteCandidateRecord, DeepWriteCandidateStatus } from '../store/DeepWriteCandidateStore.js';
 import type { MemoryEvent } from '../types/index.js';
 
 interface MemoryArgs {
-  command?: 'status' | 'list' | 'search' | 'show';
+  command?: 'status' | 'list' | 'search' | 'show' | 'dream' | 'candidates';
   query?: string;
   eventId?: string;
+  status?: DeepWriteCandidateStatus;
   projectId?: string;
   workspaceId?: string;
   threadId?: string;
@@ -43,6 +45,7 @@ function readArgs(argv: string[]): MemoryArgs {
     command,
     query: stringArg(values, 'query') || stringArg(values, 'q'),
     eventId: stringArg(values, 'event') || stringArg(values, 'event-id'),
+    status: candidateStatusArg(values, 'status'),
     projectId: stringArg(values, 'project') || stringArg(values, 'project-id'),
     workspaceId: stringArg(values, 'workspace') || stringArg(values, 'workspace-id'),
     threadId: stringArg(values, 'thread') || stringArg(values, 'thread-id'),
@@ -59,13 +62,15 @@ function readArgs(argv: string[]): MemoryArgs {
 
 function usage(): string {
   return [
-    'Usage: cogmem memory <status|list|search|show> [args]',
+    'Usage: cogmem memory <status|list|search|show|dream|candidates> [args]',
     '',
     'Commands:',
     '  status               summarize raw ledger, vector, and dream backlog state',
     '  list                 list raw ledger events with source anchors',
     '  search --query <q>   search raw ledger text without requiring hot vectors',
     '  show --event <id>    show one raw event with surrounding context',
+    '  dream                run the local dream curator over undreamed raw events',
+    '  candidates           list dream/deep-write governance candidates',
     '',
     'Common options:',
     '  --project <id>       scope to one project',
@@ -73,6 +78,7 @@ function usage(): string {
     '  --thread <id>        scope to one thread',
     '  --session <id>       scope to one session',
     '  --limit <n>          result limit, default 20',
+    '  --status <status>    candidate queue status, default candidate',
     '  --db <memory.db>     open an explicit database path',
     '  --config <toml>      open a cogmem TOML config',
     '  --json               print machine-readable JSON',
@@ -82,7 +88,12 @@ function usage(): string {
 }
 
 function isMemoryCommand(value: string | undefined): value is NonNullable<MemoryArgs['command']> {
-  return value === 'status' || value === 'list' || value === 'search' || value === 'show';
+  return value === 'status'
+    || value === 'list'
+    || value === 'search'
+    || value === 'show'
+    || value === 'dream'
+    || value === 'candidates';
 }
 
 function stringArg(values: Record<string, string | boolean>, key: string): string | undefined {
@@ -96,6 +107,25 @@ function numberArg(values: Record<string, string | boolean>, key: string): numbe
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`--${key} must be a non-negative number`);
   return parsed;
+}
+
+function candidateStatusArg(
+  values: Record<string, string | boolean>,
+  key: string,
+): DeepWriteCandidateStatus | undefined {
+  const raw = stringArg(values, key);
+  if (!raw) return undefined;
+  if (
+    raw === 'shadow'
+    || raw === 'candidate'
+    || raw === 'promoted'
+    || raw === 'rejected'
+    || raw === 'needs_confirmation'
+    || raw === 'superseded'
+  ) {
+    return raw;
+  }
+  throw new Error(`--${key} must be one of shadow, candidate, promoted, rejected, needs_confirmation, superseded`);
 }
 
 function openKernel(args: MemoryArgs): MemoryKernel {
@@ -146,6 +176,21 @@ function eventToJson(event: MemoryEvent): Record<string, unknown> {
   };
 }
 
+function candidateToJson(candidate: DeepWriteCandidateRecord): Record<string, unknown> {
+  return {
+    candidateId: candidate.candidateId,
+    runId: candidate.runId,
+    candidateType: candidate.candidateType,
+    status: candidate.status,
+    confidence: candidate.confidence,
+    content: candidate.content,
+    evidence: candidate.evidence,
+    promotionTargetType: candidate.promotionTargetType,
+    promotionTargetId: candidate.promotionTargetId,
+    createdAt: candidate.createdAt,
+  };
+}
+
 function runStatus(kernel: MemoryKernel, args: MemoryArgs): Record<string, unknown> {
   const page = kernel.eventStore.queryEvents(1, 1, {
     projectId: args.projectId ? [args.projectId] : undefined,
@@ -157,6 +202,11 @@ function runStatus(kernel: MemoryKernel, args: MemoryArgs): Record<string, unkno
     rawEventCount: page.total,
     vectorCount: kernel.vectorStore.getCurrentCount(),
     dreamBacklog: kernel.getDreamBacklogStatus(args.projectId),
+    dreamCandidateQueue: {
+      candidate: kernel.countDreamCandidates({ projectId: args.projectId, statuses: ['candidate'] }),
+      needsConfirmation: kernel.countDreamCandidates({ projectId: args.projectId, statuses: ['needs_confirmation'] }),
+      shadow: kernel.countDreamCandidates({ projectId: args.projectId, statuses: ['shadow'] }),
+    },
   };
 }
 
@@ -205,11 +255,50 @@ function runShow(kernel: MemoryKernel, args: MemoryArgs): Record<string, unknown
   };
 }
 
+async function runDream(kernel: MemoryKernel, args: MemoryArgs): Promise<Record<string, unknown>> {
+  const result = await kernel.runDreamCurator({
+    projectId: args.projectId,
+    limit: args.limit || 100,
+  });
+  return {
+    ...result,
+    candidates: result.candidates.map(candidateToJson),
+  };
+}
+
+function runCandidates(kernel: MemoryKernel, args: MemoryArgs): Record<string, unknown> {
+  const candidates = kernel.listDreamCandidates({
+    projectId: args.projectId,
+    statuses: [args.status || 'candidate'],
+    limit: args.limit || 50,
+  });
+  return {
+    total: candidates.length,
+    status: args.status || 'candidate',
+    candidates: candidates.map(candidateToJson),
+  };
+}
+
 function printHuman(command: NonNullable<MemoryArgs['command']>, payload: Record<string, unknown>): void {
   if (command === 'status') {
     console.log(`rawEvents: ${payload.rawEventCount}`);
     console.log(`vectors: ${payload.vectorCount}`);
     console.log(`dreamBacklog: ${JSON.stringify(payload.dreamBacklog)}`);
+    console.log(`dreamCandidateQueue: ${JSON.stringify(payload.dreamCandidateQueue)}`);
+    return;
+  }
+  if (command === 'dream') {
+    console.log(`processedEvents: ${payload.processedEventCount}`);
+    console.log(`dreamableEvents: ${payload.dreamableEventCount}`);
+    console.log(`candidates: ${payload.candidateCount}`);
+    console.log(`dreamBacklog: ${JSON.stringify(payload.status)}`);
+    return;
+  }
+  if (command === 'candidates') {
+    const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+    for (const candidate of candidates as Array<Record<string, unknown>>) {
+      console.log(`- ${candidate.candidateId} ${candidate.candidateType} ${candidate.status} confidence=${candidate.confidence}`);
+    }
     return;
   }
   const events = Array.isArray(payload.events) ? payload.events : [payload.event].filter(Boolean);
@@ -241,7 +330,11 @@ async function main(): Promise<void> {
         ? runList(kernel, args)
         : args.command === 'search'
           ? runSearch(kernel, args)
-          : runShow(kernel, args);
+          : args.command === 'show'
+            ? runShow(kernel, args)
+            : args.command === 'dream'
+              ? await runDream(kernel, args)
+              : runCandidates(kernel, args);
     if (args.json) {
       console.log(JSON.stringify(payload, null, 2));
       return;

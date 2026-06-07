@@ -25,6 +25,11 @@ export {
 export type {
   ForgetUserResult,
   GovernanceAuditRecord,
+  DreamCandidateListOptions,
+  DreamCandidateRecord,
+  DreamCandidateStatus,
+  DreamCuratorRunOptions,
+  DreamCuratorRunResult,
   MemoryKernelFromConfigOptions,
   MemoryKernelNavigationOptions,
   MemoryKernelNavigationResult,
