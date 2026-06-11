@@ -10,6 +10,8 @@ export interface AgentRecallQueryPlan {
     primarySearchText: string;
     searchTexts: string[];
     keywords: string[];
+    semanticCuePhrases: string[];
+    temporalHints: string[];
     anchorUsed: boolean;
 }
 export declare function compileAgentRecallQuery(input: AgentRecallQueryCompileInput): AgentRecallQueryPlan;

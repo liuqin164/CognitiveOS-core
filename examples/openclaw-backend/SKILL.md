@@ -142,6 +142,16 @@ const preparedContext = {
 
 Use `recall.narrative` as the compact prompt context and `recall.items` as cited memory evidence. If `recall.recallMode === 'universe_navigation'`, the memory kernel has already prepared related context through the pulse/temporal/narrative path.
 
+Each `recall.items[]` entry can include:
+
+- `sourceType`: `compiled_memory`, `raw_ledger`, `raw_ledger_session`, or `imported_summary`.
+- `canAnswerExactQuote`: only `true` means the item can support exact wording.
+- `sourceAnchor`: the raw event/session/thread anchor.
+- `sourceContext`: bounded raw event context with before/after events.
+- `sourceContext.locator.command`: a local command such as `cogmem memory show --event <eventId> --before 2 --after 2`.
+
+If the user asks for "原话", "具体内容", "完整脉络", "为什么当时这么判断", or "前后发生了什么", use `sourceContext` first. If more context is needed, run the locator command. Do not answer exact quotes from `compiled_memory` or `imported_summary` alone.
+
 ## OpenClaw Host Integration Notes
 
 `cogmem-connect openclaw` installs this file into `<workspace>/skills/cogmem-memory/SKILL.md`, which is OpenClaw's workspace skill location. That makes the procedure discoverable without changing OpenClaw host config.
@@ -157,6 +167,28 @@ To make every future OpenClaw turn automatically use the memory kernel, install 
 `--auto` writes `<workspace>/extensions/cogmem-auto-memory/`, patches `plugins.load.paths`, and enables `hooks.allowPromptInjection=true` and `hooks.allowConversationAccess=true` for the wrapper. The wrapper registers `before_prompt_build` for governed recall and `agent_end` for turn recording, then calls `KernelAgentMemoryBackend` through `@CognitiveOS/core` public API via a Bun bridge. Core does not import OpenClaw.
 
 Queued remember is the default. `agent_end` appends a durable JSONL job under `.cogmem/queue/openclaw-remember.jsonl` and spawns a background drain process, so Telegram or gateway responses are not blocked by embeddings, SQLite writes, or slow local models. If a drain fails, the job is retried and then moved to a dead-letter file instead of being silently discarded.
+
+For high-dimensional embedding models, prefer `ingestMode = "selective_compile"` or `ingestMode = "raw_then_dream"`. `raw_then_dream` keeps all raw events in the chronological ledger and lets the Memory Curator / Dream Worker generate candidate memories later.
+
+To enable local Ollama or cloud OpenAI-compatible curation, configure `[memory_model]` in `.cogmem/config.toml`; do not use hidden environment variables:
+
+```toml
+[memory_model]
+provider = "openai_compatible"
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5:7b"
+api_key = ""
+timeout_ms = 60000
+```
+
+Run curation manually or from a host-owned schedule:
+
+```bash
+./node_modules/.bin/cogmem memory dream --project openclaw --json
+./node_modules/.bin/cogmem memory candidates --project openclaw --status candidate --json
+```
+
+The Dream Worker only proposes candidates such as user preferences, project memories, long-term goals, boundaries, failure lessons, diagnostic conclusions, session/topic summaries, temporal fact updates, and conflicts. CPU governance decides whether they remain provisional, need confirmation, become promoted, or are superseded/archived.
 
 After package updates or config drift, repair the host wiring:
 
@@ -180,6 +212,8 @@ Normal prompt injection stays compact. When a user asks where a memory came from
 ```
 
 Inspect `sourceAnchor`, `activationPath`, `whyMatched`, `filteredEvidence`, and `governanceReason`. `sourceAnchor` points back to raw ledger events or imported source files. `filteredEvidence` is for audit/debug and must not be injected wholesale into normal prompts.
+
+When normal prompt injection contains `# CogMem Retrieved Memory`, treat it as historical memory selected by the kernel, not as the current conversation and not as a complete transcript. If the injected item includes `sourceContext`, it is allowed to explain what was asked, how it was answered, and nearby context. If it only includes an imported summary and `canAnswerExactQuote=false`, say that only a summary is available unless you can inspect raw source evidence.
 
 After runtime wiring changes, run:
 

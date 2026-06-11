@@ -35,6 +35,26 @@ model = "qwen3-embedding:0.6b"
 
 Use the matching vector dimension for the selected model. `qwen3-embedding:4b` uses 2560 dimensions and `qwen3-embedding:8b` uses 4096 dimensions.
 
+Embeddings are not the Dream Worker. If you use `raw_then_dream`, configure an optional local or cloud memory model separately:
+
+```toml
+[memory_model]
+provider = "openai_compatible"
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5:7b"
+api_key = ""
+timeout_ms = 60000
+```
+
+Then run:
+
+```bash
+./node_modules/.bin/cogmem memory dream --project openclaw --json
+./node_modules/.bin/cogmem memory candidates --project openclaw --status candidate --json
+```
+
+The Dream Worker proposes candidate memories only. It does not rewrite verified facts or promote tool/LLM output into active memory.
+
 ## Migrate
 
 Preview:
@@ -96,6 +116,14 @@ console.log(recalled.items);
 ```
 
 The profile imports memory sources only. It ignores operational files such as `AGENTS.md`, `TOOLS.md`, `HEARTBEAT.md`, and `BOOTSTRAP.md` by default.
+
+When `recalled.items[]` contains `sourceContext`, the agent can answer where the original raw event lives and inspect surrounding context. If the user asks for exact wording or a full thread, use the provided `sourceContext.locator.command`, for example:
+
+```bash
+./node_modules/.bin/cogmem memory show --event <eventId> --before 2 --after 2
+```
+
+Do not quote `compiled_memory` or `imported_summary` items as user wording when `canAnswerExactQuote=false`.
 
 For agent-facing instructions, install or read `SKILL.md`. `./node_modules/.bin/cogmem-connect openclaw --workspace .` copies it to `<workspace>/skills/cogmem-memory/SKILL.md`.
 

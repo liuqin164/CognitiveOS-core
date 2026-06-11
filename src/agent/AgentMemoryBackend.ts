@@ -75,6 +75,39 @@ export interface AgentRecallSourceAnchor {
   orderingConfidence?: MemoryEvent['orderingConfidence'];
 }
 
+export interface AgentRecallSourceContextEvent {
+  eventId: string;
+  role?: MemoryEvent['role'];
+  rawEventType?: MemoryEvent['rawEventType'];
+  eventType?: MemoryEvent['eventType'];
+  projectId?: string;
+  workspaceId?: string;
+  threadId?: string;
+  sessionId?: string;
+  turnId?: string;
+  threadSeq?: number;
+  turnSeq?: number;
+  eventOrdinal?: number;
+  occurredAt: number;
+  localDate?: string;
+  text: string;
+}
+
+export interface AgentRecallSourceContext {
+  event: AgentRecallSourceContextEvent;
+  before: AgentRecallSourceContextEvent[];
+  after: AgentRecallSourceContextEvent[];
+  parent?: AgentRecallSourceContextEvent;
+  children: AgentRecallSourceContextEvent[];
+  locator: {
+    eventId: string;
+    command: string;
+    threadId?: string;
+    sessionId?: string;
+    localDate?: string;
+  };
+}
+
 export interface AgentToolCallMemory {
   agentId: string;
   projectId: string;
@@ -135,6 +168,7 @@ export interface AgentRecallItem {
   source?: string;
   sourceType?: 'compiled_memory' | 'imported_summary' | 'raw_ledger' | 'raw_ledger_session';
   sourceAnchor?: AgentRecallSourceAnchor;
+  sourceContext?: AgentRecallSourceContext;
   confidence?: number;
   whyMatched?: string;
   canAnswerExactQuote?: boolean;
@@ -595,15 +629,21 @@ export class KernelAgentMemoryBackend {
     const importedSummary = tags.includes('reliability:imported_summary')
       || tags.includes('provenance:imported_summary')
       || tags.includes('memory_layer:summary_seed');
+    const sourceEventId = this.preferredRawSourceEventId(neuron) || neuron.metadata.sourceEventId;
+    const sourceContext = sourceEventId ? this.toAgentSourceContext(sourceEventId) : undefined;
+    const sourceAnchor = sourceContext?.event
+      ? this.toAgentSourceAnchorFromContextEvent(sourceContext.event)
+      : neuron.metadata.sourceEventId ? { eventId: neuron.metadata.sourceEventId } : undefined;
     return {
       id: neuron.id,
       text: neuron.content,
       projectId: neuron.metadata.projectId,
       topicPath: neuron.metadata.topicPath,
       tags,
-      source: neuron.metadata.filePath || neuron.metadata.sourceEventId,
+      source: neuron.metadata.filePath || sourceEventId || neuron.metadata.sourceEventId,
       sourceType: importedSummary ? 'imported_summary' : 'compiled_memory',
-      sourceAnchor: neuron.metadata.sourceEventId ? { eventId: neuron.metadata.sourceEventId } : undefined,
+      sourceAnchor,
+      sourceContext,
       confidence: importedSummary ? 0.35 : 0.75,
       whyMatched: importedSummary ? 'imported_summary_support_only' : 'governed_compiled_memory',
       canAnswerExactQuote: false,
@@ -675,9 +715,73 @@ export class KernelAgentMemoryBackend {
       source: event.eventId,
       sourceType: options.sourceType,
       sourceAnchor: this.toAgentSourceAnchor(event),
+      sourceContext: this.toAgentSourceContext(event.eventId),
       confidence: 1,
       whyMatched: options.whyMatched,
       canAnswerExactQuote: options.canAnswerExactQuote,
+    };
+  }
+
+  private preferredRawSourceEventId(neuron: MemoryKernelNavigationResult['rawEvidence'][number]): string | undefined {
+    if (!neuron.metadata.sourceEventId) return undefined;
+    const context = this.kernel.getEventContext(neuron.metadata.sourceEventId, { before: 0, after: 0 });
+    const payload = context?.event.payload as { sourceRefs?: unknown } | undefined;
+    if (!payload || !Array.isArray(payload.sourceRefs)) return undefined;
+    const refs = payload.sourceRefs.filter((item): item is MemorySourceRef => Boolean(item && typeof item === 'object'));
+    const userRef = refs.find((ref) => ref.eventId && ref.role === 'user');
+    return userRef?.eventId || refs.find((ref) => ref.eventId)?.eventId;
+  }
+
+  private toAgentSourceContext(eventId: string): AgentRecallSourceContext | undefined {
+    const context = this.kernel.getEventContext(eventId, { before: 2, after: 2 });
+    if (!context) return undefined;
+    const event = this.toAgentSourceContextEvent(context.event);
+    return {
+      event,
+      before: context.before.map((item) => this.toAgentSourceContextEvent(item)),
+      after: context.after.map((item) => this.toAgentSourceContextEvent(item)),
+      parent: context.parent ? this.toAgentSourceContextEvent(context.parent) : undefined,
+      children: context.children.map((item) => this.toAgentSourceContextEvent(item)),
+      locator: {
+        eventId: event.eventId,
+        command: `cogmem memory show --event ${event.eventId} --before 2 --after 2`,
+        threadId: event.threadId,
+        sessionId: event.sessionId,
+        localDate: event.localDate,
+      },
+    };
+  }
+
+  private toAgentSourceContextEvent(event: MemoryEvent): AgentRecallSourceContextEvent {
+    return {
+      eventId: event.eventId,
+      role: event.role,
+      rawEventType: event.rawEventType,
+      eventType: event.eventType,
+      projectId: event.projectId,
+      workspaceId: event.workspaceId,
+      threadId: event.threadId,
+      sessionId: event.sessionId,
+      turnId: event.turnId,
+      threadSeq: event.threadSeq,
+      turnSeq: event.turnSeq,
+      eventOrdinal: event.eventOrdinal,
+      occurredAt: event.occurredAt,
+      localDate: event.localDate,
+      text: this.eventText(event),
+    };
+  }
+
+  private toAgentSourceAnchorFromContextEvent(event: AgentRecallSourceContextEvent): AgentRecallSourceAnchor {
+    return {
+      eventId: event.eventId,
+      threadId: event.threadId,
+      sessionId: event.sessionId,
+      turnId: event.turnId,
+      role: event.role,
+      threadSeq: event.threadSeq,
+      turnSeq: event.turnSeq,
+      eventOrdinal: event.eventOrdinal,
     };
   }
 
@@ -718,6 +822,14 @@ export class KernelAgentMemoryBackend {
       causalityType: event.causalityType,
       orderingConfidence: event.orderingConfidence,
     };
+  }
+
+  private eventText(event: MemoryEvent): string {
+    const payload = event.payload as { text?: unknown; output?: unknown; title?: unknown };
+    if (typeof payload.text === 'string') return payload.text;
+    if (typeof payload.output === 'string') return payload.output;
+    if (typeof payload.title === 'string') return payload.title;
+    return JSON.stringify(event.payload);
   }
 
   private shouldCompileTurn(

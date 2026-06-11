@@ -239,6 +239,76 @@ test('agent backend forensic quote recall distills long follow-up queries before
   kernel.close();
 });
 
+test('agent backend cue recall finds old black-box archive wording and returns drill-down context', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-backend-cue-source-context-'));
+  const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-source',
+    userText: '我们的对话的存档位置是属于黑盒吧，我作为用户是无法看到的是吗？',
+    assistantText: '这个问题指向记忆可审计性：注入摘要不是完整档案，raw ledger 才能下钻。',
+    timestamp: 1_700_000_000_000,
+    ingestMode: 'raw_archive_only',
+  });
+
+  const recalled = backend.recall({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-current',
+    excludeSessionId: 'session-current',
+    query: '几个月前我们是不是讨论过记忆黑盒的问题？',
+    limit: 3,
+  });
+
+  expect(recalled.items).toHaveLength(1);
+  expect(recalled.items[0].text).toContain('存档位置');
+  expect(recalled.items[0].sourceType).toBe('raw_ledger');
+  expect(recalled.items[0].sourceContext?.event.text).toContain('存档位置');
+  expect(recalled.items[0].sourceContext?.after[0].text).toContain('记忆可审计性');
+  expect(recalled.items[0].sourceContext?.locator.command).toContain('cogmem memory show --event');
+  expect(recalled.queryPlan?.semanticCuePhrases).toContain('存档 黑盒');
+
+  kernel.close();
+});
+
+test('agent backend compiled memory recall includes source locator and bounded surrounding raw context', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-backend-compiled-source-context-'));
+  const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  const remembered = await backend.rememberTurnWithResult({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    sessionId: 'session-compiled-source',
+    userText: '重要：如果 CogMem 只注入摘要，agent 需要知道原始内容在哪。',
+    assistantText: '我会把 source locator 和 surrounding context 放进 recall item。',
+    timestamp: 1_700_000_000_000,
+    ingestMode: 'immediate_compile',
+  });
+
+  const recalled = backend.recall({
+    agentId: 'openclaw',
+    projectId: 'demo',
+    query: 'CogMem 摘要 原始内容 source locator',
+    limit: 3,
+  });
+  const item = recalled.items.find((candidate) => candidate.id === remembered.compiledNeuronId);
+
+  expect(item).toBeDefined();
+  expect(item?.sourceType).toBe('compiled_memory');
+  expect(item?.canAnswerExactQuote).toBe(false);
+  expect(item?.sourceAnchor?.eventId).toBe(remembered.rawEventIds[0]);
+  expect(item?.sourceContext?.event.eventId).toBe(remembered.rawEventIds[0]);
+  expect(item?.sourceContext?.event.text).toContain('只注入摘要');
+  expect(item?.sourceContext?.after[0].text).toContain('source locator');
+  expect(item?.sourceContext?.locator.command).toContain(remembered.rawEventIds[0]);
+
+  kernel.close();
+});
+
 test('agent backend forensic quote recall can use a prior raw source anchor for vague follow-up questions', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agent-backend-followup-anchor-'));
   const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });

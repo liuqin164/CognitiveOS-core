@@ -4,6 +4,8 @@ export {
   type AgentRecallQuery,
   type AgentRecallResult,
   type AgentRecallSourceAnchor,
+  type AgentRecallSourceContext,
+  type AgentRecallSourceContextEvent,
   type AgentTaskEventMemory,
   type AgentToolCallMemory,
   type AgentToolObservationMemory,

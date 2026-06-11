@@ -363,6 +363,7 @@ export class MemoryKernel {
       eventStore: this.eventStore,
       dreamLedgerStore: this.dreamLedgerStore,
       candidateStore: this.deepWriteCandidateStore,
+      modelRegistry: this.modelRegistry,
     });
     this.topicSummaryBoard = new TopicSummaryBoard(this.memoryGraph, this.summaryStore);
     this.topicDecayPolicy = new TopicDecayPolicy(this.memoryGraph);

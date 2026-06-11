@@ -19,25 +19,35 @@ Agent-facing recall is governed by default. `KernelAgentMemoryBackend.recall()` 
 
 For agent lifecycle events, source refs may point to `message`, `tool_call`, `tool_result`, or `task_event` raw ledger entries. For normalized JSON/CSV imports, source refs preserve original source offset and row/line anchors when available, even though ingestion flows through Markdown projection.
 
+`KernelAgentMemoryBackend.recall()` also returns `sourceContext` on agent-facing items when a raw event can be resolved. `sourceContext` contains the raw event text, bounded before/after events, parent/child links, and a `sourceLocator` command:
+
+```bash
+cogmem memory show --event <eventId> --before 2 --after 2
+```
+
+Agents should use `sourceContext` when the user asks what was specifically said, how a conclusion was explained, or what happened before/after a remembered point. If `canAnswerExactQuote=false`, the item is only a clue until the raw source event is inspected.
+
 ## Agent Query Plans
 
-`KernelAgentMemoryBackend.recall()` returns a `queryPlan` alongside agent-ready items. The plan records the original query, inferred/explicit intent, primary search text, and bounded search cues used for recall. This makes long questions auditable: an adapter can show that a sentence about "CogMem Memory Context 和记忆黑盒" was reduced to stable cues such as `CogMem Memory Context 记忆 黑盒` instead of being treated as one brittle raw string.
+`KernelAgentMemoryBackend.recall()` returns a `queryPlan` alongside agent-ready items. The plan records the original query, inferred/explicit intent, primary search text, bounded search cues, `semanticCuePhrases`, and `temporalHints` used for recall. This makes long questions auditable: an adapter can show that a sentence about "CogMem Memory Context 和记忆黑盒" was reduced to stable cues such as `CogMem Memory Context 记忆 黑盒`, `存档 黑盒`, or `黑盒` instead of being treated as one brittle raw string.
 
 Forensic follow-ups can pass `anchorEventId` or `anchorText` from a previous recall item. The backend then prefers the anchored raw event for questions such as "what exactly did I say" instead of letting a vague query drift to unrelated imported summaries. Imported summaries and compiled memories still set `canAnswerExactQuote=false`; only raw source events with anchors can support exact wording.
 
 ## Dream Candidate Audit
 
-`raw_then_dream` makes dream backlog visible before semantic compilation happens. `cogmem memory dream` runs the local curator over undreamed raw events and `cogmem memory candidates` shows the resulting governance queue.
+`raw_then_dream` makes dream backlog visible before semantic compilation happens. `cogmem memory dream` runs the Memory Curator / Dream Worker over undreamed raw events and `cogmem memory candidates` shows the resulting governance queue.
 
 Each candidate includes:
 
-- `candidateType`: summary, preferences, contradictions, causalLinks, or another governed category.
+- `candidateType`: summary, preferences, user_preference, project_memory, long_term_goal, boundary, failure_lesson, diagnostic_conclusion, session_summary, topic_summary, temporal_fact_update, conflict_candidate, contradictions, causalLinks, or another governed category.
 - `status`: usually `candidate` or `shadow` until a CPU governance policy reviews it.
 - `confidence`: a bounded extraction confidence, not truth confidence.
 - `content`: the proposed memory payload.
 - `evidence`: raw event anchors with `eventId`, role, global/thread order, parent/previous links, and source text excerpts.
 
 Candidates explain organization, not truth. A preference candidate can show that the user explicitly said a constraint, but it is still queued for governance. A tool-result causal candidate can show that one tool result belongs to a tool call, but it must not become a verified real-world fact merely because the tool returned text.
+
+When `[memory_model]` is configured, the worker may call a local Ollama or cloud OpenAI-compatible memory model to propose richer candidates. The explainability contract is unchanged: model output must include source evidence, remains candidate-only, and cannot directly change active memory.
 
 ## Filtered Evidence
 

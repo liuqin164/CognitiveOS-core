@@ -657,6 +657,8 @@ test('cogmem-connect can install the OpenClaw automatic memory plugin wrapper', 
   expect(bridgeBody).toContain('# CogMem Retrieved Memory');
   expect(bridgeBody).toContain('sourceType');
   expect(bridgeBody).toContain('canAnswerExactQuote=false');
+  expect(bridgeBody).toContain('sourceContext');
+  expect(bridgeBody).toContain('cogmem memory show --event');
   expect(bridgeBody).toContain('Current conversation context is separate');
   expect(bridgeBody).toContain("intent: input.intent || 'memory_recall'");
 });

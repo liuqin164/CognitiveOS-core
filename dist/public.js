@@ -43,6 +43,12 @@ export { ChecksumError, DimensionMismatchError, KernelRunningError, SnapshotExpo
 export { AesGcmEncryptionProvider, isEncryptedPayload } from './encryption/index.js';
 export { PiiRedactor } from './governance/index.js';
 export { EmbeddingUnavailableError, embedOne } from './embedding/EmbeddingProvider.js';
+/**
+ * Dream curator scheduling helpers. They describe host-owned schedules; core
+ * never starts a hidden daemon.
+ * @beta @since 2.0.0-rc.1
+ */
+export { describeDreamCuratorWorkflow, nextDreamCuratorRunAt, } from './engine/DreamCuratorSchedule.js';
 export { ReEmbeddingPipeline } from './embedding/ReEmbeddingPipeline.js';
 /**
  * Vector store backends — choose between durable sqlite-vec (recommended)

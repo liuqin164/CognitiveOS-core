@@ -28,3 +28,17 @@ test('agent recall query compiler carries prior recall anchor text for follow-up
   expect(compiled.primarySearchText).toContain('黑盒');
   expect(compiled.searchTexts[0]).toBe('记忆 黑盒');
 });
+
+test('agent recall query compiler expands semantic cue phrases across wording drift', () => {
+  const compiled = compileAgentRecallQuery({
+    query: '几个月前我们是不是讨论过记忆黑盒的问题？',
+  });
+
+  expect(compiled.intent).toBe('memory_recall');
+  expect(compiled.keywords).toContain('记忆');
+  expect(compiled.keywords).toContain('黑盒');
+  expect(compiled.semanticCuePhrases).toContain('记忆 黑盒');
+  expect(compiled.semanticCuePhrases).toContain('存档 黑盒');
+  expect(compiled.searchTexts).toContain('黑盒');
+  expect(compiled.temporalHints).toContain('past');
+});

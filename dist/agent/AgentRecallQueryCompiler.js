@@ -59,10 +59,13 @@ export function compileAgentRecallQuery(input) {
         : keywordSource;
     const residual = stripFillers(originalQuery);
     const anchorResidual = stripFillers(anchorText);
+    const semanticCuePhrases = buildSemanticCuePhrases(keywords, originalQuery, anchorText);
+    const temporalHints = extractTemporalHints(originalQuery);
     const searchTexts = uniqueNonEmpty([
         joinKeywords(keywords),
         joinKeywords(queryKeywords.filter((keyword) => !QUOTE_TERMS.has(keyword.toLowerCase()))),
         joinKeywords(anchorKeywords.filter((keyword) => !QUOTE_TERMS.has(keyword.toLowerCase()))),
+        ...semanticCuePhrases,
         residual && keywords.length === 0 ? residual : '',
         anchorResidual && keywords.length === 0 ? anchorResidual : '',
     ]).filter((candidate) => !containsFiller(candidate));
@@ -72,6 +75,8 @@ export function compileAgentRecallQuery(input) {
         primarySearchText: searchTexts[0] || residual || originalQuery,
         searchTexts: searchTexts.length > 0 ? searchTexts : [originalQuery],
         keywords,
+        semanticCuePhrases,
+        temporalHints,
         anchorUsed: anchorKeywords.length > 0,
     };
 }
@@ -138,6 +143,43 @@ function containsFiller(value) {
 }
 function joinKeywords(keywords) {
     return mergeKeywords(keywords).join(' ');
+}
+function buildSemanticCuePhrases(keywords, query, anchorText) {
+    const merged = mergeKeywords(keywords);
+    const text = `${query}\n${anchorText}`;
+    const out = [];
+    const hasMemory = merged.includes('记忆') || /memory|CogMem|记忆/u.test(text);
+    const hasBlackBox = merged.includes('黑盒') || /黑盒|black\s*box/iu.test(text);
+    if (hasMemory && hasBlackBox) {
+        out.push('记忆 黑盒');
+        out.push('存档 黑盒');
+        out.push('对话 存档 黑盒');
+        out.push('上下文 黑盒');
+        out.push('黑盒');
+    }
+    else if (hasBlackBox) {
+        out.push('黑盒');
+        out.push('存档 黑盒');
+    }
+    if (/原话|exact quote|verbatim/iu.test(text) && hasBlackBox) {
+        out.push('黑盒 原话');
+    }
+    if (/CogMem Memory Context/iu.test(text)) {
+        out.push('CogMem Memory Context');
+        out.push('Memory Context');
+    }
+    return uniqueNonEmpty(out);
+}
+function extractTemporalHints(query) {
+    const hints = [];
+    if (/之前|以前|过去|几个月前|半年前|上个月|前几天|昨天|上次|上个|previous|before|last/i.test(query)) {
+        hints.push('past');
+    }
+    if (/昨天|yesterday/i.test(query))
+        hints.push('yesterday');
+    if (/上一个|上个|上次|previous|last/i.test(query))
+        hints.push('previous');
+    return uniqueNonEmpty(hints);
 }
 function mergeKeywords(...groups) {
     const out = [];

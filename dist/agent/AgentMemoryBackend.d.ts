@@ -54,6 +54,37 @@ export interface AgentRecallSourceAnchor {
     causalityType?: MemoryEvent['causalityType'];
     orderingConfidence?: MemoryEvent['orderingConfidence'];
 }
+export interface AgentRecallSourceContextEvent {
+    eventId: string;
+    role?: MemoryEvent['role'];
+    rawEventType?: MemoryEvent['rawEventType'];
+    eventType?: MemoryEvent['eventType'];
+    projectId?: string;
+    workspaceId?: string;
+    threadId?: string;
+    sessionId?: string;
+    turnId?: string;
+    threadSeq?: number;
+    turnSeq?: number;
+    eventOrdinal?: number;
+    occurredAt: number;
+    localDate?: string;
+    text: string;
+}
+export interface AgentRecallSourceContext {
+    event: AgentRecallSourceContextEvent;
+    before: AgentRecallSourceContextEvent[];
+    after: AgentRecallSourceContextEvent[];
+    parent?: AgentRecallSourceContextEvent;
+    children: AgentRecallSourceContextEvent[];
+    locator: {
+        eventId: string;
+        command: string;
+        threadId?: string;
+        sessionId?: string;
+        localDate?: string;
+    };
+}
 export interface AgentToolCallMemory {
     agentId: string;
     projectId: string;
@@ -111,6 +142,7 @@ export interface AgentRecallItem {
     source?: string;
     sourceType?: 'compiled_memory' | 'imported_summary' | 'raw_ledger' | 'raw_ledger_session';
     sourceAnchor?: AgentRecallSourceAnchor;
+    sourceContext?: AgentRecallSourceContext;
     confidence?: number;
     whyMatched?: string;
     canAnswerExactQuote?: boolean;
@@ -149,8 +181,13 @@ export declare class KernelAgentMemoryBackend {
     private quoteEventPriority;
     private isQuoteSourceEvent;
     private toAgentRawRecallItem;
+    private preferredRawSourceEventId;
+    private toAgentSourceContext;
+    private toAgentSourceContextEvent;
+    private toAgentSourceAnchorFromContextEvent;
     private toAgentSourceAnchor;
     private toSourceRef;
+    private eventText;
     private shouldCompileTurn;
     private hasDurableTurnSignal;
 }

@@ -46,7 +46,7 @@ function usage() {
         '  list                 list raw ledger events with source anchors',
         '  search --query <q>   search raw ledger text without requiring hot vectors',
         '  show --event <id>    show one raw event with surrounding context',
-        '  dream                run the local dream curator over undreamed raw events',
+        '  dream                run the Memory Curator / Dream Worker over undreamed raw events',
         '  candidates           list dream/deep-write governance candidates',
         '',
         'Common options:',
@@ -60,6 +60,7 @@ function usage() {
         '  --config <toml>      open a cogmem TOML config',
         '  --json               print machine-readable JSON',
         '',
+        'Dream uses deterministic local rules unless [memory_model] in TOML explicitly configures an OpenAI-compatible local Ollama or cloud chat model.',
         'This is a local audit console, not a notes app or UI dashboard. It exposes provenance so memory is not a black box.',
     ].join('\n');
 }

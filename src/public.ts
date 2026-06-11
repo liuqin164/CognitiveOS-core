@@ -72,6 +72,8 @@ export {
   type AgentRecallQueryPlan,
   type AgentRecallResult,
   type AgentRecallSourceAnchor,
+  type AgentRecallSourceContext,
+  type AgentRecallSourceContextEvent,
   type AgentTaskEventMemory,
   type AgentToolCallMemory,
   type AgentToolObservationMemory,
@@ -158,6 +160,21 @@ export { EmbeddingUnavailableError, embedOne } from './embedding/EmbeddingProvid
  * @beta @since 1.9.8
  */
 export type { ReEmbeddingStatus } from './embedding/ReEmbeddingStatus.js';
+
+/**
+ * Dream curator scheduling helpers. They describe host-owned schedules; core
+ * never starts a hidden daemon.
+ * @beta @since 2.0.0-rc.1
+ */
+export {
+  describeDreamCuratorWorkflow,
+  nextDreamCuratorRunAt,
+} from './engine/DreamCuratorSchedule.js';
+export type {
+  DreamCuratorScheduleConfig,
+  DreamCuratorScheduleMode,
+  DreamCuratorWorkflowDescription,
+} from './engine/DreamCuratorSchedule.js';
 export { ReEmbeddingPipeline } from './embedding/ReEmbeddingPipeline.js';
 
 /**

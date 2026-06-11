@@ -54,11 +54,38 @@ pii_redact_email = true
 pii_redact_phone = true
 pii_redact_ssn = true
 encryption = false
+
+[memory_model]
+provider = "rule_only"
 ```
 
 Set `core.vector_dimension` to match the embedding model output. For example, `qwen3-embedding:8b` uses 4096 dimensions. High dimensions are supported, but `cogmem-doctor` warns at 2048+ dimensions because 4096-dimensional Float32 vectors use about 1.53 GiB for 100,000 memories before SQLite/index overhead.
 
 TOML is the only configuration entrypoint. Environment variables are not read as global kernel configuration; they are only interpolated when explicitly referenced inside `config.toml`, for example `api_key = "${ANTHROPIC_API_KEY}"`.
+
+`[memory_model]` controls optional Memory Curator / Dream Worker LLM assistance. Leave it as `rule_only` for the deterministic local curator. To let the curator propose richer candidates with a local Ollama chat model, use OpenAI-compatible Ollama:
+
+```toml
+[memory_model]
+provider = "openai_compatible"
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5:7b"
+api_key = ""
+timeout_ms = 60000
+```
+
+For a cloud OpenAI-compatible endpoint, configure it explicitly:
+
+```toml
+[memory_model]
+provider = "openai_compatible"
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
+api_key = "${OPENAI_API_KEY}"
+timeout_ms = 60000
+```
+
+The LLM is a curator only: it proposes memory candidates from raw ledger windows. CPU governance decides whether a candidate stays `candidate`, becomes `needs_confirmation`, or is later promoted/superseded/archived.
 
 ## SDK Quickstart
 
@@ -114,7 +141,7 @@ console.log(result.items);
 
 `KernelAgentMemoryBackend.recall()` routes through universe navigation first. That means core activates related entities, temporal branches, and graph neighbors, assembles a narrative summary, and returns context that is already prepared for the agent. `MemoryKernel.recall()` remains available as the lower-level BrainRecall path; the backend uses it only as a fallback when universe navigation yields no scoped evidence. If both compiled recall paths miss, the backend can use bounded raw ledger FTS as `raw_ledger_fallback`; this returns only matching raw snippets within the evidence limit and does not dump whole threads into the prompt.
 
-Adapters may pass `sessionId`, `threadId`, `excludeSessionId`, `intent`, `anchorEventId`, and `anchorText` when the user asks for session-aware or forensic recall. `KernelAgentMemoryBackend.recall()` compiles the user's raw question into a bounded `queryPlan` before search, so long questions such as "do you remember when we discussed CogMem Memory Context and the memory black box" are distilled into stable recall cues instead of using the full sentence as a brittle vector/FTS query. `intent: "previous_session_summary"` reads the previous completed session from the chronological ledger instead of guessing through semantic recall. `intent: "forensic_quote"` returns raw user/source events with `sourceAnchor` and `canAnswerExactQuote=true`; follow-up questions such as "what were my exact words" can pass the previous recall anchor to drill down to the raw event. Compiled memories and imported summaries set `canAnswerExactQuote=false` and must not be presented as exact wording. This keeps chronological replay separate from ranked context recall.
+Adapters may pass `sessionId`, `threadId`, `excludeSessionId`, `intent`, `anchorEventId`, and `anchorText` when the user asks for session-aware or forensic recall. `KernelAgentMemoryBackend.recall()` compiles the user's raw question into a bounded `queryPlan` before search, so long questions such as "do you remember when we discussed CogMem Memory Context and the memory black box" are distilled into stable recall cues instead of using the full sentence as a brittle vector/FTS query. The query plan includes `semanticCuePhrases` and `temporalHints`, so wording drift such as "对话存档位置属于黑盒" versus "记忆黑盒问题" can still reach raw ledger evidence through cues like `记忆 黑盒`, `存档 黑盒`, and `黑盒`. `intent: "previous_session_summary"` reads the previous completed session from the chronological ledger instead of guessing through semantic recall. `intent: "forensic_quote"` returns raw user/source events with `sourceAnchor`, `sourceContext`, and `canAnswerExactQuote=true`; follow-up questions such as "what were my exact words" can pass the previous recall anchor to drill down to the raw event. Compiled memories and imported summaries set `canAnswerExactQuote=false` and must not be presented as exact wording, but they may still include `sourceContext` and a `sourceLocator` command such as `cogmem memory show --event <eventId> --before 2 --after 2` so the agent can inspect the original raw event and surrounding context. This keeps chronological replay separate from ranked context recall.
 
 Turn recording supports four modes:
 
@@ -125,7 +152,7 @@ Turn recording supports four modes:
 
 For OpenClaw/Hermes automatic turn recording with high-dimensional Qwen embeddings, prefer `selective_compile` or `raw_then_dream`. This keeps full raw evidence while avoiding a high-dimensional vector for every sentence.
 
-Run the local dream curator when `raw_then_dream` backlog exists:
+Run the dream curator when `raw_then_dream` backlog exists:
 
 ```ts
 const result = await kernel.runDreamCurator({ projectId: 'workspace-a', limit: 100 });
@@ -133,7 +160,16 @@ console.log(result.candidateCount);
 console.log(kernel.listDreamCandidates({ projectId: 'workspace-a', statuses: ['candidate'] }));
 ```
 
-The curator is deterministic and candidate-only. It reads undreamed raw ledger events in `globalSeq` order, suppresses operational noise, proposes summaries, user preferences, project constraints, corrections, and causal/tool-observation candidates, and stores them in the deep-write governance queue with raw event source anchors. It does not create hot vectors and does not promote candidates to verified facts.
+The curator is candidate-only. In `rule_only` mode it is deterministic and local-first. When `[memory_model]` is configured with an OpenAI-compatible chat endpoint, it can also ask the memory model to propose richer candidates: user preferences, project memories, long-term goals, prohibitions/boundaries, failure lessons, diagnostic conclusions, session summaries, topic summaries, temporal fact updates, and conflict candidates. All candidates are stored in the deep-write governance queue with raw event source anchors. It does not create hot vectors, does not delete raw ledger events, and does not promote candidates to verified facts.
+
+Core exposes schedule helpers for hosts that want background curation without turning core into a daemon:
+
+- `manual`: an operator or agent runs `cogmem memory dream`.
+- `interval`: cron/systemd runs it every N milliseconds.
+- `daily`: cron/systemd runs it at configured local times, such as `03:30` and `15:30`.
+- `continuous`: the host adapter runs it when raw backlog has been idle for a configured period.
+
+Use `describeDreamCuratorWorkflow()` and `nextDreamCuratorRunAt()` to make these schedules explicit in adapters. The host owns timers; core only processes a bounded ledger window when called.
 
 ## Memory Model
 
