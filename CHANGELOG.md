@@ -37,5 +37,6 @@
 - Added dream curator schedule helpers for host-owned `manual`, `interval`, `daily`, and `continuous` workflows without starting a hidden core daemon.
 - Added `semanticCuePhrases`, `temporalHints`, and `sourceContext` to agent-facing recall so wording-drift questions such as `记忆黑盒` can find older `存档位置属于黑盒` raw evidence and agents can drill down to exact raw ledger context.
 - Added raw ledger anchors for imported OpenClaw/Hermes records so legacy memory files remain searchable through `cogmem memory search/show/recall` after curation while imported summaries stay `canAnswerExactQuote=false`.
+- Added `cogmem-import-openclaw --reindex-raw` / `cogmem-import-hermes --reindex-raw` to backfill raw ledger anchors for records imported by older versions without duplicating compiled memory or hot vectors.
 - Added `cogmem memory recall` as an agent-facing active memory search command using `KernelAgentMemoryBackend.recall()` with query plans and source context, so OpenClaw can query CogMem when automatic prompt injection is empty.
 - Expanded the Memory Curator / Dream Worker with semantic tag, indexing decision, semantic relation, and edge-adjustment candidates for host-owned curation loops without directly mutating verified memory.

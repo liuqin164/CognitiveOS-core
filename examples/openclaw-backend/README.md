@@ -133,6 +133,14 @@ If automatic `# CogMem Retrieved Memory` injection is absent or too thin, the ag
 
 Use `--intent previous_session_summary` for "上个会话我们聊了什么" and `--intent forensic_quote` for "我当时的原话是什么". Only fall back to legacy `memory/` Markdown files after `cogmem memory recall` or `cogmem memory search` fails to find useful evidence.
 
+After upgrading an existing OpenClaw workspace that imported old memory before raw ledger anchors were available, run:
+
+```bash
+./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --config .cogmem/config.toml --reindex-raw --json
+```
+
+This backfills searchable raw anchors for old imported memories without duplicating compiled memory or vectors.
+
 For agent-facing instructions, install or read `SKILL.md`. `./node_modules/.bin/cogmem-connect openclaw --workspace .` copies it to `<workspace>/skills/cogmem-memory/SKILL.md`.
 
 To make future OpenClaw turns automatically recall and record memory, run:

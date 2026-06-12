@@ -21,6 +21,8 @@ export interface AgentImportResult {
     recordsWouldIngest: number;
     recordsIngested: number;
     skippedRecords: number;
+    rawRecordsAnchored?: number;
+    reindexRaw?: boolean;
     processedSourceIds: string[];
     diagnostics: SourceAdapterDiagnostic[];
     sourceResults: Array<{

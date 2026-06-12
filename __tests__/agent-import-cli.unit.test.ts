@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import Database from 'bun:sqlite';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -127,6 +128,101 @@ test('OpenClaw import writes memory once and skips already imported records on r
   });
   kernel.close();
   expect(recalled.rawEvidence.some((item) => item.content.includes('BLE device provisioning'))).toBe(true);
+});
+
+test('OpenClaw --reindex-raw backfills raw anchors for already imported legacy records', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-openclaw-reindex-raw-'));
+  const dbPath = join(dir, 'memory.db');
+  mkdirSync(join(dir, 'memory'));
+  writeFileSync(join(dir, 'memory', '2026-06-03-1310.md'), [
+    '# 2026-06-03',
+    '用户问 CogMem Memory Context 是否属于记忆黑盒。',
+    'Agent 解释：注入摘要只能说明发生了什么，必须用 sourceContext 下钻原文。',
+  ].join('\n'));
+
+  const imported = await runCli([
+    'bun',
+    openClawImportBin,
+    '--workspace',
+    dir,
+    '--db',
+    dbPath,
+    '--project',
+    'openclaw-test',
+    '--json',
+  ]);
+  expect(imported.stderr).toBe('');
+  expect(imported.exitCode).toBe(0);
+
+  const db = new Database(dbPath);
+  db.exec('DELETE FROM memory_events_fts');
+  db.exec('DELETE FROM memory_events');
+  db.close();
+
+  const skipped = await runCli([
+    'bun',
+    openClawImportBin,
+    '--workspace',
+    dir,
+    '--db',
+    dbPath,
+    '--project',
+    'openclaw-test',
+    '--json',
+  ]);
+  expect(skipped.stderr).toBe('');
+  expect(skipped.exitCode).toBe(0);
+  expect(JSON.parse(skipped.stdout).recordsIngested).toBe(0);
+
+  const reindexed = await runCli([
+    'bun',
+    openClawImportBin,
+    '--workspace',
+    dir,
+    '--db',
+    dbPath,
+    '--project',
+    'openclaw-test',
+    '--reindex-raw',
+    '--json',
+  ]);
+  expect(reindexed.stderr).toBe('');
+  expect(reindexed.exitCode).toBe(0);
+  const parsed = JSON.parse(reindexed.stdout);
+  expect(parsed.reindexRaw).toBe(true);
+  expect(parsed.rawRecordsAnchored).toBeGreaterThan(0);
+
+  const again = await runCli([
+    'bun',
+    openClawImportBin,
+    '--workspace',
+    dir,
+    '--db',
+    dbPath,
+    '--project',
+    'openclaw-test',
+    '--reindex-raw',
+    '--json',
+  ]);
+  expect(again.stderr).toBe('');
+  expect(again.exitCode).toBe(0);
+  expect(JSON.parse(again.stdout).rawRecordsAnchored).toBe(0);
+
+  const kernel = createMemoryKernel({ dbPath });
+  const memory = new KernelAgentMemoryBackend(kernel);
+  const recalled = memory.recall({
+    agentId: 'openclaw',
+    projectId: 'openclaw-test',
+    query: '我们之前是不是讨论过记忆黑盒和 sourceContext',
+    limit: 5,
+  });
+  kernel.close();
+
+  const item = recalled.items.find((candidate) => candidate.text.includes('记忆黑盒'));
+  expect(item).toBeDefined();
+  expect(item?.sourceType).toBe('imported_summary');
+  expect(item?.canAnswerExactQuote).toBe(false);
+  expect(item?.sourceContext?.event.text).toContain('sourceContext');
 });
 
 test('OpenClaw migrated records are visible through KernelAgentMemoryBackend recall', async () => {

@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { basename, resolve } from 'node:path';
 
 import {
+  buildEpisodeEnvelope,
   ConversationMarkdownAdapter,
   HermesWorkspaceProfile,
   MarkdownSourceLoader,
@@ -16,6 +18,7 @@ import {
   type SourceAdapterKind,
   type SourceDefinition,
 } from '../adapters/index.js';
+import type { BatchEpisodeEnvelope } from '../adapters/index.js';
 import { InstalledBatchProcessor } from '../batch/InstalledBatchProcessor.js';
 import type { BatchProgressEvent } from '../batch/InstalledBatchProcessor.js';
 import { loadCogmemConfig, resolveCogmemConfigPath } from '../config/CogmemConfig.js';
@@ -49,6 +52,8 @@ export interface AgentImportResult {
   recordsWouldIngest: number;
   recordsIngested: number;
   skippedRecords: number;
+  rawRecordsAnchored?: number;
+  reindexRaw?: boolean;
   processedSourceIds: string[];
   diagnostics: SourceAdapterDiagnostic[];
   sourceResults: Array<{
@@ -103,7 +108,7 @@ export async function runOpenClawImport(argv: string[]): Promise<void> {
     workspaceRoot,
     projectId,
     sources,
-    usage: 'Usage: cogmem-import-openclaw [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--date YYYY-MM-DD] [--session <file>...] [--memory <file>...] [--dry-run] [--json] [--progress] [--no-progress]',
+    usage: 'Usage: cogmem-import-openclaw [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--date YYYY-MM-DD] [--session <file>...] [--memory <file>...] [--reindex-raw] [--dry-run] [--json] [--progress] [--no-progress]',
   });
 }
 
@@ -125,7 +130,7 @@ export async function runHermesImport(argv: string[]): Promise<void> {
     workspaceRoot,
     projectId,
     sources,
-    usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--profile <file>] [--sessions <dir>] [--session <file>...] [--dry-run] [--json] [--progress] [--no-progress]',
+    usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--profile <file>] [--sessions <dir>] [--session <file>...] [--reindex-raw] [--dry-run] [--json] [--progress] [--no-progress]',
   });
 }
 
@@ -150,6 +155,7 @@ async function runAgentImport(input: {
 
   const window = buildWindow(input.args);
   const dryRun = input.args.values['dry-run'] === true;
+  const reindexRaw = input.args.values['reindex-raw'] === true;
   const result = dryRun
     ? previewSources({
         agent: input.agent,
@@ -158,6 +164,15 @@ async function runAgentImport(input: {
         sources: input.sources,
         window,
       })
+    : reindexRaw
+      ? reindexRawSources({
+          agent: input.agent,
+          args: input.args,
+          workspaceRoot: input.workspaceRoot,
+          projectId: input.projectId,
+          sources: input.sources,
+          window,
+        })
     : await importSources({
         agent: input.agent,
         args: input.args,
@@ -219,6 +234,8 @@ function previewSources(input: {
     recordsWouldIngest: recordsParsed,
     recordsIngested: 0,
     skippedRecords: 0,
+    rawRecordsAnchored: 0,
+    reindexRaw: false,
     processedSourceIds: [],
     diagnostics,
     sourceResults,
@@ -241,48 +258,7 @@ async function importSources(input: {
       for (const item of items) neurons.push(await opened.kernel.ingest(item));
       return neurons;
     },
-    recordRawEvidence: (envelope) => {
-      const sourceRef = envelope.ingestInput.sourceRefs?.[0];
-      const record = envelope.record;
-      const metadata = record.metadata || {};
-      const role = sourceRef?.role === 'assistant'
-        ? 'assistant'
-        : sourceRef?.role === 'tool'
-          ? 'tool'
-          : sourceRef?.role === 'system'
-            ? 'system'
-            : record.role === 'agent'
-              ? 'assistant'
-              : record.role === 'user'
-                ? 'user'
-                : 'system';
-      const threadId = sourceRef?.threadId || stringRecordField(metadata.threadId) || record.provenance.sourceId;
-      const sessionId = sourceRef?.sessionId || stringRecordField(metadata.sessionId) || record.provenance.sourceId;
-      return opened.kernel.recordRawEvent({
-        projectId: input.projectId,
-        workspaceId: input.projectId,
-        threadId,
-        sessionId,
-        turnId: sourceRef?.turnId || record.turnId || record.recordId,
-        turnSeq: sourceRef?.turnSeq,
-        role,
-        rawEventType: 'message',
-        content: record.text,
-        eventOrdinal: sourceRef?.eventOrdinal ?? sourceRef?.sourceOffset,
-        occurredAt: record.timestamp,
-        sourceId: record.provenance.sourceId,
-        metadata: {
-          ...metadata,
-          imported: true,
-          sourcePath: record.provenance.sourcePath,
-          sourceType: record.provenance.sourceType,
-          adapterVersion: record.provenance.adapterVersion,
-          reliabilityClass: record.provenance.reliabilityClass,
-          sourceRef,
-          tags: envelope.ingestInput.tags || [],
-        },
-      });
-    },
+    recordRawEvidence: (envelope) => recordRawImportedEvidence(opened.kernel, input.projectId, envelope).event,
     runOfflineWindow: (window) => opened.kernel.consolidate({
       projectId: input.projectId,
       startTime: window.start,
@@ -309,6 +285,8 @@ async function importSources(input: {
       recordsWouldIngest: summary.recordsIngested,
       recordsIngested: summary.recordsIngested,
       skippedRecords: summary.skippedRecords,
+      rawRecordsAnchored: summary.recordsIngested,
+      reindexRaw: false,
       processedSourceIds: summary.processedSourceIds,
       diagnostics: summary.adapterDiagnostics,
       sourceResults: summary.sourceResults.map((item) => ({
@@ -326,6 +304,167 @@ async function importSources(input: {
     opened.kernel.cursorStore.close();
     opened.kernel.close();
   }
+}
+
+function reindexRawSources(input: {
+  agent: AgentKind;
+  args: ParsedArgs;
+  workspaceRoot: string;
+  projectId: string;
+  sources: SourceDefinition[];
+  window: AgentImportResult['window'];
+}): AgentImportResult {
+  const opened = openKernel(input.args, input.workspaceRoot);
+  const loader = new MarkdownSourceLoader();
+  const adapters = buildAdapterMap();
+  const diagnostics: SourceAdapterDiagnostic[] = [];
+  const sourceResults: AgentImportResult['sourceResults'] = [];
+  const processedSourceIds: string[] = [];
+  let recordsParsed = 0;
+  let rawRecordsAnchored = 0;
+  let skippedRecords = 0;
+
+  try {
+    for (const source of input.sources) {
+      const adapter = adapters.get(source.adapterKind);
+      if (!adapter) continue;
+      const snapshot = loader.read(source);
+      const adapted = adapter.adapt(source, snapshot, { start: input.window.start, end: input.window.end });
+      diagnostics.push(...(adapted.diagnostics || []));
+      recordsParsed += adapted.records.length;
+      let sourceAnchored = 0;
+      let sourceSkipped = 0;
+      for (const record of adapted.records) {
+        const envelope = buildEpisodeEnvelope(source, record);
+        const anchored = recordRawImportedEvidence(opened.kernel, input.projectId, envelope);
+        if (anchored.created) {
+          sourceAnchored += 1;
+        } else {
+          sourceSkipped += 1;
+        }
+      }
+      rawRecordsAnchored += sourceAnchored;
+      skippedRecords += sourceSkipped;
+      if (adapted.records.length > 0) processedSourceIds.push(source.sourceId);
+      sourceResults.push({
+        sourceId: source.sourceId,
+        sourcePath: source.sourcePath,
+        adapterKind: source.adapterKind,
+        recordsParsed: adapted.records.length,
+        recordsWouldIngest: adapted.records.length,
+        recordsIngested: sourceAnchored,
+        skippedRecords: sourceSkipped,
+        diagnostics: adapted.diagnostics || [],
+      });
+    }
+
+    return {
+      agent: input.agent,
+      workspaceRoot: input.workspaceRoot,
+      projectId: input.projectId,
+      dbPath: opened.dbPath,
+      dryRun: false,
+      reindexRaw: true,
+      window: input.window,
+      sourcesScanned: input.sources.length,
+      sourcesChanged: processedSourceIds.length,
+      recordsParsed,
+      recordsWouldIngest: recordsParsed,
+      recordsIngested: rawRecordsAnchored,
+      skippedRecords,
+      rawRecordsAnchored,
+      processedSourceIds,
+      diagnostics,
+      sourceResults,
+    };
+  } finally {
+    opened.kernel.cursorStore.close();
+    opened.kernel.close();
+  }
+}
+
+function recordRawImportedEvidence(
+  kernel: MemoryKernel,
+  projectId: string,
+  envelope: BatchEpisodeEnvelope,
+): { event: ReturnType<MemoryKernel['recordRawEvent']>; created: boolean } {
+  const sourceRef = envelope.ingestInput.sourceRefs?.[0];
+  const record = envelope.record;
+  const metadata = record.metadata || {};
+  const role = sourceRef?.role === 'assistant'
+    ? 'assistant'
+    : sourceRef?.role === 'tool'
+      ? 'tool'
+      : sourceRef?.role === 'system'
+        ? 'system'
+        : record.role === 'agent'
+          ? 'assistant'
+          : record.role === 'user'
+            ? 'user'
+            : 'system';
+  const threadId = sourceRef?.threadId || stringRecordField(metadata.threadId) || record.provenance.sourceId;
+  const sessionId = sourceRef?.sessionId || stringRecordField(metadata.sessionId) || record.provenance.sourceId;
+  const eventOrdinal = sourceRef?.eventOrdinal ?? sourceRef?.sourceOffset;
+  const importAnchor = [
+    record.provenance.sourceId,
+    record.recordId,
+    sourceRef?.sourcePath,
+    sourceRef?.lineStart,
+    sourceRef?.lineEnd,
+    eventOrdinal,
+  ].filter((item) => item !== undefined && item !== null && String(item).length > 0).join(':');
+  const existing = findImportedRawAnchor(kernel, {
+    projectId,
+    threadId,
+    sourceId: record.provenance.sourceId,
+    importAnchor,
+    contentHash: createHash('sha256').update(record.text).digest('hex'),
+  });
+  if (existing) return { event: existing as ReturnType<MemoryKernel['recordRawEvent']>, created: false };
+
+  const event = kernel.recordRawEvent({
+    projectId,
+    workspaceId: projectId,
+    threadId,
+    sessionId,
+    turnId: sourceRef?.turnId || record.turnId || record.recordId,
+    turnSeq: sourceRef?.turnSeq,
+    role,
+    rawEventType: 'message',
+    content: record.text,
+    eventOrdinal,
+    occurredAt: record.timestamp,
+    sourceId: record.provenance.sourceId,
+    metadata: {
+      ...metadata,
+      imported: true,
+      importAnchor,
+      sourcePath: record.provenance.sourcePath,
+      sourceType: record.provenance.sourceType,
+      adapterVersion: record.provenance.adapterVersion,
+      reliabilityClass: record.provenance.reliabilityClass,
+      sourceRef,
+      tags: envelope.ingestInput.tags || [],
+    },
+  });
+  return { event, created: true };
+}
+
+function findImportedRawAnchor(
+  kernel: MemoryKernel,
+  input: {
+    projectId: string;
+    threadId: string;
+    sourceId: string;
+    importAnchor: string;
+    contentHash: string;
+  },
+): ReturnType<MemoryKernel['recordRawEvent']> | undefined {
+  return kernel.getThreadEvents(input.threadId, { projectId: input.projectId }).find((event) => {
+    const payload = event.payload as { metadata?: Record<string, unknown> };
+    return event.sourceId === input.sourceId
+      && (payload.metadata?.importAnchor === input.importAnchor || event.contentHash === input.contentHash);
+  }) as ReturnType<MemoryKernel['recordRawEvent']> | undefined;
 }
 
 function stringRecordField(value: unknown): string | undefined {
@@ -412,6 +551,7 @@ function printHumanSummary(result: AgentImportResult): void {
   console.log(`sources: ${result.sourcesScanned}`);
   console.log(`records parsed: ${result.recordsParsed}`);
   console.log(`records ${action}: ${result.dryRun ? result.recordsWouldIngest : result.recordsIngested}`);
+  if (result.rawRecordsAnchored !== undefined) console.log(`raw ledger anchors: ${result.rawRecordsAnchored}`);
   console.log(`records skipped: ${result.skippedRecords}`);
   if (result.diagnostics.length > 0) {
     console.log('diagnostics:');

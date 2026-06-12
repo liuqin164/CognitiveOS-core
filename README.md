@@ -181,6 +181,13 @@ Use `MemoryKernel.searchRawEvents(query, { projectId })` when you need to find o
 
 Existing OpenClaw/Hermes importers now write raw ledger anchors for imported records before ingesting compiled/index memory. Imported daily summaries remain `imported_summary` evidence with `canAnswerExactQuote=false`, but they are searchable through raw ledger and can carry `sourceContext` so an agent can say where the summary came from instead of treating it as a black box.
 
+If an older CogMem version already imported legacy records before raw ledger anchors existed, backfill the anchors without duplicating compiled memory or vectors:
+
+```bash
+./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --config .cogmem/config.toml --reindex-raw --json
+./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --config .cogmem/config.toml --reindex-raw --json
+```
+
 Vector pruning is not memory pruning. `cogmem compact` deletes only eligible vector blobs from `vector_index`; it does not delete raw ledger events, sourceRefs, chronological ordering, or tool-call parent/child links.
 
 Semantic memories can point back to raw events through `sourceRefs`; `explainRecallWithKernel()` includes `sourceAnchor` when provenance is available. See `MEMORY_MODEL.md` and `RECALL_EXPLAINABILITY.md`.

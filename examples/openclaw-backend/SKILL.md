@@ -175,6 +175,14 @@ Use `items[].sourceContext` to understand what the user asked, how the agent ans
 
 Only fall back to searching OpenClaw's legacy `memory/` files when `cogmem memory recall` and `cogmem memory search` return no useful evidence or when the user explicitly asks to inspect the legacy files.
 
+If old imported memories do not appear in `cogmem memory recall` after an upgrade, backfill raw ledger anchors before concluding the memory is missing:
+
+```bash
+./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --config .cogmem/config.toml --reindex-raw --json
+```
+
+This command is idempotent. It does not duplicate compiled memory or hot vectors; it only restores searchable raw anchors for older imports.
+
 ## OpenClaw Host Integration Notes
 
 `cogmem-connect openclaw` installs this file into `<workspace>/skills/cogmem-memory/SKILL.md`, which is OpenClaw's workspace skill location. That makes the procedure discoverable without changing OpenClaw host config.
