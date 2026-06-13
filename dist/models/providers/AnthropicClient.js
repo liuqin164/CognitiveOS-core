@@ -23,14 +23,14 @@ export class AnthropicClient {
                 signal: controller.signal
             });
             if (!response.ok) {
-                console.warn(`[agent-brain] anthropic chat failed with HTTP ${response.status}`);
+                console.warn(`[cogmem] anthropic chat failed with HTTP ${response.status}`);
                 return '';
             }
             const payload = await response.json();
             return payload.content?.[0]?.text ?? '';
         }
         catch (error) {
-            console.warn('[agent-brain] anthropic chat failed', error);
+            console.warn('[cogmem] anthropic chat failed', error);
             return '';
         }
         finally {

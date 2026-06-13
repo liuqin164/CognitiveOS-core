@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * cogmem-init — Interactive configuration wizard for @CognitiveOS/core
+ * cogmem-init — Interactive configuration wizard for cogmem
  *
  * Guides new users through:
  *  1. Database path
@@ -42,6 +42,16 @@ interface OpenClawDetection {
   hasUserMd: boolean;
   hasSoulMd: boolean;
   hasPersonaMd: boolean;
+}
+
+interface HermesDetection {
+  detected: boolean;
+  homeDir: string;
+  hasConfig: boolean;
+  hasMemoriesDir: boolean;
+  hasSkillsDir: boolean;
+  hasProfile: boolean;
+  hasSessionsDir: boolean;
 }
 
 interface WizardConfig {
@@ -169,6 +179,25 @@ function detectOpenClaw(cwd: string): OpenClawDetection {
   const hasPersonaMd  = existsSync(join(cwd, 'PERSONA.md'));
   const detected = hasMemoryDir || (hasUserMd && hasSoulMd);
   return { detected, hasMemoryDir, hasUserMd, hasSoulMd, hasPersonaMd };
+}
+
+function detectHermes(cwd: string, env = process.env): HermesDetection {
+  const home = env.HOME || homedir();
+  const hermesHome = resolve(home, '.hermes');
+  const cwdLooksLikeHermes = existsSync(join(cwd, 'config.yaml'))
+    || existsSync(join(cwd, 'config.yml'))
+    || existsSync(join(cwd, 'memories'))
+    || existsSync(join(cwd, 'skills'))
+    || existsSync(join(cwd, 'profile.md'))
+    || existsSync(join(cwd, 'sessions'));
+  const root = cwdLooksLikeHermes ? cwd : hermesHome;
+  const hasConfig = existsSync(join(root, 'config.yaml')) || existsSync(join(root, 'config.yml'));
+  const hasMemoriesDir = existsSync(join(root, 'memories'));
+  const hasSkillsDir = existsSync(join(root, 'skills'));
+  const hasProfile = existsSync(join(root, 'profile.md')) || existsSync(join(root, 'memories', 'profile.md'));
+  const hasSessionsDir = existsSync(join(root, 'sessions')) || existsSync(join(root, 'memories', 'sessions'));
+  const detected = hasConfig || hasMemoriesDir || hasSkillsDir || hasProfile || hasSessionsDir;
+  return { detected, homeDir: root, hasConfig, hasMemoriesDir, hasSkillsDir, hasProfile, hasSessionsDir };
 }
 
 // ─── Model suggestion helpers ─────────────────────────────────────────────────
@@ -559,6 +588,30 @@ async function stepOpenClaw(oclaw: OpenClawDetection): Promise<boolean> {
   return confirm('  Enable OpenClaw batch source integration?', true);
 }
 
+async function stepHermes(hermes: HermesDetection): Promise<boolean> {
+  console.log('');
+  console.log('  ── Step 6 of 6: Hermes Integration ───────────────────────────');
+
+  if (!hermes.detected) {
+    console.log('  No Hermes home detected.');
+    console.log('  (Expects: ~/.hermes/config.yaml, ~/.hermes/memories, ~/.hermes/skills, profile.md, or sessions/)');
+    return false;
+  }
+
+  console.log(`  Hermes home detected: ${hermes.homeDir}`);
+  if (hermes.hasConfig) console.log('    config.yaml/config.yml  ✓');
+  if (hermes.hasMemoriesDir) console.log('    memories/              ✓');
+  if (hermes.hasSkillsDir) console.log('    skills/                ✓');
+  if (hermes.hasProfile) console.log('    profile.md             ✓');
+  if (hermes.hasSessionsDir) console.log('    sessions/              ✓');
+  console.log('');
+  console.log('  Enabling prepares cogmem for Hermes import and MCP wiring.');
+  console.log('  Runtime setup is installed later with: cogmem connect hermes');
+  console.log('');
+
+  return confirm('  Enable Hermes integration?', true);
+}
+
 // ─── Config file writer ───────────────────────────────────────────────────────
 
 function buildTomlLines(cfg: WizardConfig): string[] {
@@ -675,7 +728,7 @@ function printUsageSnippet(cfg: WizardConfig): void {
   console.log('  Quick-start snippet:');
   console.log('');
   console.log('  ┌─────────────────────────────────────────────────────────────┐');
-  console.log("  │  import { createMemoryKernelFromConfig } from '@CognitiveOS/core';");
+  console.log("  │  import { createMemoryKernelFromConfig } from 'cogmem';");
   console.log('  │');
   console.log("  │  // Auto-discovers .cogmem/config.toml or ~/.cogmem/config.toml");
   console.log('  │  const kernel = createMemoryKernelFromConfig();');
@@ -698,7 +751,7 @@ function printUsageSnippet(cfg: WizardConfig): void {
   if (cfg.openClawEnabled) {
     console.log('');
     console.log('  OpenClaw integration:');
-    console.log("  │  import { OpenClawUserProfileAdapter, OpenClawPersonaAdapter } from '@CognitiveOS/core';");
+    console.log("  │  import { OpenClawUserProfileAdapter, OpenClawPersonaAdapter } from 'cogmem';");
     console.log('  │  // Use kernel.batchIngest() with the OpenClaw adapters');
     console.log('  │  // See packages/core/src/adapters/openclaw/ for all 5 adapter classes');
   }
@@ -706,7 +759,7 @@ function printUsageSnippet(cfg: WizardConfig): void {
   if (cfg.hermesEnabled) {
     console.log('');
     console.log('  Hermes integration:');
-    console.log("  │  import { HermesWorkspaceProfile } from '@CognitiveOS/core';");
+    console.log("  │  import { HermesWorkspaceProfile } from 'cogmem';");
     console.log('  │  const profile = new HermesWorkspaceProfile(process.cwd());');
     console.log('  │  const sources = profile.buildSourceDefinitions({ projectId: "hermes" });');
   }
@@ -718,7 +771,7 @@ async function main(): Promise<void> {
   const args = readArgs(process.argv.slice(2));
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════════════╗');
-  console.log('║           @CognitiveOS/core — Memory Kernel Init             ║');
+  console.log('║                  cogmem — Memory Kernel Init                 ║');
   console.log('║                   Interactive Setup Wizard                    ║');
   console.log('╚═══════════════════════════════════════════════════════════════╝');
   console.log('');
@@ -745,6 +798,7 @@ async function main(): Promise<void> {
 
   // Detect OpenClaw workspace
   const oclawDet = detectOpenClaw(process.cwd());
+  const hermesDet = detectHermes(process.cwd());
 
   if (args.yes) {
     const embedding = suggestEmbeddingModel(det);
@@ -770,7 +824,7 @@ async function main(): Promise<void> {
       piiSsn: true,
       encryptionPassphrase: '',
       openClawEnabled: args.agent === 'openclaw' || (args.agent === 'auto' && oclawDet.detected),
-      hermesEnabled: args.agent === 'hermes',
+      hermesEnabled: args.agent === 'hermes' || (args.agent === 'auto' && !oclawDet.detected && hermesDet.detected),
     };
     const lines = buildTomlLines(cfg);
     const outputPath = target.configPath;
@@ -808,7 +862,11 @@ async function main(): Promise<void> {
     : args.agent === 'auto'
       ? await stepOpenClaw(oclawDet)
       : false;
-  const hermesEnabled = args.agent === 'hermes';
+  const hermesEnabled = args.agent === 'hermes'
+    ? true
+    : args.agent === 'auto' && !openClawEnabled
+      ? await stepHermes(hermesDet)
+      : false;
 
   // Compose final config
   const cfg: WizardConfig = {

@@ -64,7 +64,7 @@ import { SqliteVecStore } from './store/SqliteVecStore.js';
 import { VectorStore } from './store/VectorStore.js';
 import { config } from './utils/Config.js';
 import { KernelRunningError, SnapshotExporter, SnapshotImporter, } from './snapshot/index.js';
-const CORE_VERSION = '2.0.0-rc.1';
+const CORE_VERSION = '2.0.0';
 const LATEST_SCHEMA_VERSION = 12;
 export class MemoryKernel {
     options;
@@ -665,7 +665,7 @@ export class MemoryKernel {
         const pipelineP99Ms = this.pipelineMetrics.getPipelineP99();
         return {
             status: 'ok',
-            package: '@CognitiveOS/core',
+            package: 'cogmem',
             dbPath: this.dbPath,
             stats: this.memoryGraph.getStats(),
             vectorRecall: this.getVectorRecallStatus(),

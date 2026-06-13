@@ -26,14 +26,14 @@ export class OpenAICompatibleClient {
                 signal: controller.signal
             });
             if (!response.ok) {
-                console.warn(`[agent-brain] openai_compatible chat failed with HTTP ${response.status}`);
+                console.warn(`[cogmem] openai_compatible chat failed with HTTP ${response.status}`);
                 return '';
             }
             const payload = await response.json();
             return payload.choices?.[0]?.message?.content ?? '';
         }
         catch (error) {
-            console.warn('[agent-brain] openai_compatible chat failed', error);
+            console.warn('[cogmem] openai_compatible chat failed', error);
             return '';
         }
         finally {

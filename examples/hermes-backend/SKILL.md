@@ -1,23 +1,23 @@
 ---
 name: cogmem-memory-backend
-description: Install and connect CognitiveOS-core as a durable memory backend for Hermes through MCP.
+description: Install and connect cogmem as a durable memory backend for Hermes through MCP.
 version: 1.0.0
 metadata:
   hermes:
-    tags: [memory, mcp, cogmem, cognitiveos]
+    tags: [memory, mcp, cogmem, agent-memory]
     category: memory
 ---
 
-# CognitiveOS-core Memory Backend for Hermes
+# cogmem Memory Backend for Hermes
 
-Use this skill when a Hermes workspace needs `@CognitiveOS/core` as its durable memory backend.
+Use this skill when a Hermes workspace needs `cogmem` as its durable memory backend.
 
 ## Ground Rules
 
 - Use TOML config only: `~/.cogmem/config.toml` or project `.cogmem/config.toml`.
-- Do not create .agent-brain.env files.
+- Do not create .cogmem.env files.
 - Do not pass `--env-path`.
-- Do not configure kernel behavior through `AB_*`, `COGMEM_*`, or `AGENT_BRAIN_MODEL_*` environment variables.
+- Do not configure kernel behavior through hidden environment variables; write TOML instead.
 - Do not run a separate vector search before calling `memory.recall()`. `KernelAgentMemoryBackend.recall()` is the first-class recall path and already performs pulse activation, temporal traversal, graph traversal, and narrative assembly.
 - Do not set `memory.provider: cogmem` in `~/.hermes/config.yaml`; this package uses Hermes MCP integration, not a native Hermes memory provider.
 
@@ -26,16 +26,16 @@ Use this skill when a Hermes workspace needs `@CognitiveOS/core` as its durable 
 Run from the Hermes workspace root:
 
 ```bash
-export COGMEM_CORE_REPO="github:<owner>/CognitiveOS-core#main"
-bun add "$COGMEM_CORE_REPO"
-./node_modules/.bin/cogmem-init --agent hermes
-./node_modules/.bin/cogmem-doctor
+COGMEM_SKIP_INIT=1 curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash
+cogmem init --yes --agent hermes
+cogmem doctor
+cogmem connect hermes --workspace . --auto --force
 ```
 
 Use project-local config only when this workspace needs isolation:
 
 ```bash
-./node_modules/.bin/cogmem-init --agent hermes --scope project
+cogmem init --yes --agent hermes --scope project
 ```
 
 The default install creates:
@@ -62,7 +62,18 @@ base_url = "http://localhost:11434/v1"
 model = "qwen3-embedding:0.6b"
 ```
 
-Use the matching dimension for larger local models: `qwen3-embedding:4b` uses `2560`; `qwen3-embedding:8b` uses `4096`. Run `./node_modules/.bin/cogmem-doctor` after editing. Imported records are embedded through the configured kernel embedder during `cogmem-import-hermes`.
+Use the matching dimension for larger local models: `qwen3-embedding:4b` uses `2560`; `qwen3-embedding:8b` uses `4096`. Run `cogmem doctor` after editing. Imported records are embedded through the configured kernel embedder during `cogmem import-hermes`.
+
+Also configure `[memory_model]` for the Dream Curator. Embeddings are for recall; the memory model is the LLM that proposes candidate summaries, preferences, tags, conflicts, and diagnostics:
+
+```toml
+[memory_model]
+provider = "openai_compatible"
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5:7b"
+api_key = ""
+timeout_ms = 60000
+```
 
 ## Migrate Existing Hermes Memory
 
@@ -74,27 +85,27 @@ Default Hermes memory contract:
 Always preview first:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --dry-run
+cogmem import-hermes --workspace . --project hermes --dry-run
 ```
 
 Then migrate:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes
+cogmem import-hermes --workspace . --project hermes
 ```
 
 Use JSON output when another agent is orchestrating the run:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --json
+cogmem import-hermes --workspace . --project hermes --json
 ```
 
 If Hermes stores memory somewhere else, pass explicit paths:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
+cogmem import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
+cogmem import-hermes --workspace . --project hermes --session ./one.md
+cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
 ```
 
 The importer is idempotent. Re-running it skips records already imported into the same memory database.
@@ -107,7 +118,7 @@ Use `KernelAgentMemoryBackend` for turn storage and recall:
 import {
   KernelAgentMemoryBackend,
   createMemoryKernelFromConfig,
-} from '@CognitiveOS/core';
+} from 'cogmem';
 
 const kernel = createMemoryKernelFromConfig();
 const memory = new KernelAgentMemoryBackend(kernel);
@@ -143,14 +154,14 @@ Hermes external memory providers are activated through `memory.provider` in `~/.
 
 Do not edit `~/.hermes/config.yaml` to point `memory.provider` at `cogmem` until a Hermes native provider plugin exists on disk. The supported bridge in this package is MCP.
 
-`cogmem-connect hermes` installs this file into `~/.hermes/skills/cogmem-memory/SKILL.md`, which is Hermes's primary skill directory.
+`cogmem connect hermes` installs this file into `~/.hermes/skills/cogmem-memory/SKILL.md`, which is Hermes's primary skill directory.
 
-Add this MCP server to `~/.hermes/config.yaml` after installing the core package in the Hermes workspace:
+`cogmem connect hermes --workspace . --auto --force` patches `~/.hermes/config.yaml` with this MCP server:
 
 ```yaml
 mcp_servers:
   cogmem:
-    command: "/absolute/path/to/hermes-workspace/node_modules/.bin/cogmem-mcp"
+    command: "/resolved/path/to/cogmem-mcp"
     args: []
     enabled: true
     tools:
@@ -159,6 +170,8 @@ mcp_servers:
         - cogmem_recall
         - cogmem_explain_recall
 ```
+
+The command path is resolved by `cogmem connect hermes`: it uses `COGMEM_MCP_BIN` when explicitly set, then a workspace-local `node_modules/.bin/cogmem-mcp` when present, then the globally linked `cogmem-mcp` from the one-line installer.
 
 Then reload MCP inside Hermes:
 

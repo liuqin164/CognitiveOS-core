@@ -13,7 +13,7 @@ export class DeepWriteMemoryCompiler {
     }
     async compile(input) {
         const systemPrompt = [
-            'You are the write-time memory compiler for Agent Brain.',
+            'You are the write-time memory compiler for cogmem.',
             'Return JSON only.',
             'Do not invent facts.',
             'Every candidate must include evidence.',

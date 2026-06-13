@@ -61,9 +61,9 @@ test('cogmem-normalize-transcript writes normalized markdown with JSON source re
   });
 
   const output = readFileSync(outputPath, 'utf8');
-  expect(output).toContain('<!-- agent-brain-original-input-family: json_array_transcript_export -->');
-  expect(output).toContain('<!-- agent-brain-source-ref: {"sourceOffset":1,"orderingConfidence":"high"} -->');
-  expect(output).toContain('<!-- agent-brain-source-ref: {"sourceOffset":2,"orderingConfidence":"high"} -->');
+  expect(output).toContain('<!-- cogmem-original-input-family: json_array_transcript_export -->');
+  expect(output).toContain('<!-- cogmem-source-ref: {"sourceOffset":1,"orderingConfidence":"high"} -->');
+  expect(output).toContain('<!-- cogmem-source-ref: {"sourceOffset":2,"orderingConfidence":"high"} -->');
   expect(output).toContain('- [2026-06-01T10:00:00.000Z] user: Remember JSON source order.');
 });
 
@@ -114,6 +114,6 @@ test('README documents normalize transcript usage and source-ref output', async 
   expect(readme).toContain('--family json-array');
   expect(readme).toContain('--family csv');
   expect(readme).toContain('--dry-run --json');
-  expect(readme).toContain('agent-brain-source-ref');
+  expect(readme).toContain('cogmem-source-ref');
   expect(readme).toContain('does not open a memory database');
 });

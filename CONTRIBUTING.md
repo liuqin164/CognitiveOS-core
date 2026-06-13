@@ -4,8 +4,8 @@
 
 ```bash
 bun install
-bun run --filter '@CognitiveOS/core' type
-bun run --filter '@CognitiveOS/core' test
+bun run typecheck
+bun test
 ```
 
 ## Pull Request Gate
@@ -13,13 +13,13 @@ bun run --filter '@CognitiveOS/core' test
 Before opening a pull request that changes core, run:
 
 ```bash
-bun run --filter '@CognitiveOS/core' build
-bun run --filter '@CognitiveOS/core' type
-bun run --filter '@CognitiveOS/core' test
-cd packages/core && npm pack --dry-run --json
+bun run build
+bun run typecheck
+bun test
+npm pack --dry-run --json
 ```
 
-`@CognitiveOS/core` is distributed from GitHub for this release candidate. Use `npm pack --dry-run --json` only to verify the package contents; do not publish the package to npm.
+`cogmem` is distributed from GitHub Releases. Use `npm pack --dry-run --json` to verify package contents and upload the resulting release asset through GitHub. Do not publish this release channel to npm.
 
 ## API Discipline
 
@@ -27,4 +27,4 @@ Only explicitly exported symbols in `src/public.ts` are public. Do not re-export
 
 ## Adapter Changes
 
-Agent-specific adapters must keep core independent from CognitiveOS. Prefer a narrow workspace profile plus fixture-backed tests over importing another runtime.
+Agent-specific adapters must keep core independent from host runtimes. Prefer a narrow workspace profile plus fixture-backed tests over importing another runtime.

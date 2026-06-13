@@ -1,11 +1,11 @@
 # Hermes Agent Memory Backend Runbook
 
-You are configuring Hermes to use `@CognitiveOS/core` as its durable memory backend.
+You are configuring Hermes to use `cogmem` as its durable memory backend.
 
 For a portable one-file skill, read `SKILL.md` or install it into the workspace with:
 
 ```bash
-./node_modules/.bin/cogmem-connect hermes --workspace .
+cogmem connect hermes --workspace .
 ```
 
 This writes `~/.hermes/skills/cogmem-memory/SKILL.md`, which Hermes discovers as a local skill.
@@ -15,10 +15,11 @@ This writes `~/.hermes/skills/cogmem-memory/SKILL.md`, which Hermes discovers as
 Run from the Hermes workspace root:
 
 ```bash
-export COGMEM_CORE_REPO="github:<owner>/CognitiveOS-core#main"
-bun add "$COGMEM_CORE_REPO"
-./node_modules/.bin/cogmem-init --agent hermes
-./node_modules/.bin/cogmem-doctor
+COGMEM_SKIP_INIT=1 curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash
+cogmem init --yes --agent hermes
+cogmem doctor --fix --agent hermes --workspace .
+cogmem connect hermes --workspace . --auto
+cogmem connect hermes --workspace .
 ```
 
 The default install creates:
@@ -29,9 +30,9 @@ The default install creates:
 ~/.cogmem/snapshots/
 ```
 
-Use `~/.cogmem/config.toml` or a project `.cogmem/config.toml` as the only configuration source. Do not create `.agent-brain.env` files, do not pass `--env-path`, and do not configure kernel behavior through `AB_*`, `COGMEM_*`, or `AGENT_BRAIN_MODEL_*` environment variables.
+Use `~/.cogmem/config.toml` or a project `.cogmem/config.toml` as the stable configuration source. Do not create `.cogmem.env` files or pass `--env-path` for normal installs. Environment variables are only for explicit process-level overrides documented by the CLI, not for hidden workspace configuration.
 
-Use `./node_modules/.bin/cogmem-init --agent hermes --scope project` only when this workspace needs its own `.cogmem/` directory.
+Use `cogmem init --yes --agent hermes --scope project` only when this workspace needs its own `.cogmem/` directory.
 
 To embed imported memories with a local quantized model, run Ollama locally and configure the kernel before importing:
 
@@ -49,7 +50,7 @@ base_url = "http://localhost:11434/v1"
 model = "qwen3-embedding:0.6b"
 ```
 
-Use the matching dimension for larger local models: `qwen3-embedding:4b` uses `2560`; `qwen3-embedding:8b` uses `4096`. Run `./node_modules/.bin/cogmem-doctor` after editing. Imported records are embedded through the configured kernel embedder during `cogmem-import-hermes`.
+Use the matching dimension for larger local models: `qwen3-embedding:4b` uses `2560`; `qwen3-embedding:8b` uses `4096`. Run `cogmem doctor` after editing. Imported records are embedded through the configured kernel embedder during `cogmem import-hermes`.
 
 ## Migrate Existing Hermes Memory
 
@@ -61,27 +62,27 @@ Default Hermes memory contract:
 Preview first:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --dry-run
+cogmem import-hermes --workspace . --project hermes --dry-run
 ```
 
 Then migrate:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes
+cogmem import-hermes --workspace . --project hermes
 ```
 
 Use `--json` when another agent needs structured output:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --json
+cogmem import-hermes --workspace . --project hermes --json
 ```
 
 If Hermes stores memory somewhere else, pass explicit paths:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
+cogmem import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
+cogmem import-hermes --workspace . --project hermes --session ./one.md
+cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
 ```
 
 ## Runtime Wiring
@@ -92,7 +93,7 @@ Use `KernelAgentMemoryBackend` for turn storage and recall:
 import {
   KernelAgentMemoryBackend,
   createMemoryKernelFromConfig,
-} from '@CognitiveOS/core';
+} from 'cogmem';
 
 const kernel = createMemoryKernelFromConfig();
 const memory = new KernelAgentMemoryBackend(kernel);
@@ -129,3 +130,5 @@ Recall behavior:
 - Do not run a separate vector search before calling `memory.recall()`. The backend is the first-class memory retrieval path.
 
 The migration command is idempotent. Re-running it skips records already imported into the same memory database.
+
+Hermes integration is currently a skill plus MCP bridge. It does not replace a native Hermes memory provider and it does not patch Hermes runtime internals. `cogmem connect hermes --workspace . --auto` writes or updates the `mcp_servers.cogmem` entry in the Hermes config. Restart or reload Hermes after patching MCP config.

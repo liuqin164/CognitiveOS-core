@@ -6,7 +6,7 @@ import { ReportFormatter } from '../src/eval/runners/ReportFormatter.ts';
 
 let results: EvalSuiteResult[] = [];
 const formatter = new ReportFormatter();
-const reportRoot = `/tmp/agent-brain-eval-report-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const reportRoot = `/tmp/cogmem-eval-report-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 beforeAll(async () => {
   results = await new EvalRunner().runAll();

@@ -10,7 +10,7 @@ import { SupersedeChain } from '../src/governance/SupersedeChain.js';
 const createdDbPaths = new Set<string>();
 
 function makeDbPath(): string {
-  const path = `/tmp/agent-brain-memory-explain-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+  const path = `/tmp/cogmem-memory-explain-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
   createdDbPaths.add(path);
   return path;
 }

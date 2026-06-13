@@ -540,7 +540,7 @@ test('OpenClaw import resolves explicit --config relative to the shell cwd', asy
 
 test('agent import CLIs reject legacy env-path configuration', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-openclaw-envpath-reject-'));
-  const envPath = join(dir, '.agent-brain.env');
+  const envPath = join(dir, '.cogmem.env');
   mkdirSync(join(dir, 'memory'));
   writeFileSync(envPath, 'COGMEM_DB=memory.db\n');
   writeFileSync(join(dir, 'USER.md'), 'User identity: env path should be rejected.');
@@ -567,15 +567,15 @@ test('agent-facing runbooks tell OpenClaw and Hermes agents how to self-install 
   const openclaw = await Bun.file(join(coreRoot, 'examples/openclaw-backend/AGENTS.md')).text();
   const hermes = await Bun.file(join(coreRoot, 'examples/hermes-backend/AGENTS.md')).text();
 
-  expect(openclaw).toContain('cogmem-init --agent openclaw');
+  expect(openclaw).toContain('cogmem init --yes --agent openclaw');
   expect(openclaw).toContain('~/.cogmem/config.toml');
-  expect(openclaw).toContain('cogmem-import-openclaw');
+  expect(openclaw).toContain('cogmem import-openclaw');
   expect(openclaw).toContain('KernelAgentMemoryBackend');
   expect(openclaw).toContain('Do not import AGENTS.md');
 
-  expect(hermes).toContain('cogmem-init --agent hermes');
+  expect(hermes).toContain('cogmem init --yes --agent hermes');
   expect(hermes).toContain('~/.cogmem/config.toml');
-  expect(hermes).toContain('cogmem-import-hermes');
+  expect(hermes).toContain('cogmem import-hermes');
   expect(hermes).toContain('KernelAgentMemoryBackend');
   expect(hermes).toContain('profile.md');
 });
@@ -587,10 +587,10 @@ test('README documents complete import usage including single files, batches, an
   expect(readme).toContain('ollama pull qwen3-embedding:0.6b');
   expect(readme).toContain('provider = "openai_compatible"');
   expect(readme).toContain('model = "qwen3-embedding:0.6b"');
-  expect(readme).toContain('cogmem-import-openclaw');
+  expect(readme).toContain('cogmem import-openclaw');
   expect(readme).toContain('--session ./one.md --session ./two.md');
   expect(readme).toContain('--memory ./one.md --memory ./two.md');
-  expect(readme).toContain('cogmem-import-hermes');
+  expect(readme).toContain('cogmem import-hermes');
   expect(readme).toContain('--profile ./memory/profile.md --sessions ./memory/sessions');
   expect(readme).toContain('--session ./one.md --session ./two.md');
   expect(readme).toContain('dry-run');
@@ -603,15 +603,15 @@ test('agent-facing skill files tell OpenClaw and Hermes agents how to self-insta
 
   for (const body of [openclaw, hermes]) {
     expect(body).toStartWith('---\nname: cogmem-memory-backend');
-    expect(body).toContain('cogmem-init');
-    expect(body).toContain('cogmem-doctor');
+    expect(body).toContain('cogmem init --yes');
+    expect(body).toContain('cogmem doctor');
     expect(body).toContain('cogmem-mcp');
     expect(body).toContain('--dry-run');
     expect(body).toContain('KernelAgentMemoryBackend');
     expect(body).toContain('createMemoryKernelFromConfig');
     expect(body).toContain('recall.narrative');
     expect(body).toContain('Do not run a separate vector search');
-    expect(body).toContain('Do not create .agent-brain.env');
+    expect(body).toContain('Do not create .cogmem.env');
     expect(body).toContain('ollama pull qwen3-embedding:0.6b');
     expect(body).toContain('[embedding]');
     expect(body).toContain('provider = "openai_compatible"');
@@ -619,20 +619,20 @@ test('agent-facing skill files tell OpenClaw and Hermes agents how to self-insta
     expect(body).toContain('Imported records are embedded through the configured kernel embedder');
   }
 
-  expect(openclaw).toContain('cogmem-import-openclaw');
+  expect(openclaw).toContain('cogmem import-openclaw');
   expect(openclaw).toContain('memory_search');
   expect(openclaw).toContain('memory.backend');
   expect(openclaw).toContain('Do not write `plugins.slots.memory`');
   expect(openclaw).not.toContain('plugins.slots.memory = "cogmem"');
   expect(openclaw).toContain('Queued remember');
-  expect(openclaw).toContain('cogmem-explain-recall --query');
+  expect(openclaw).toContain('cogmem explain-recall --query');
   expect(openclaw).toContain('cogmem memory recall --query');
   expect(openclaw).toContain('If CogMem Retrieved Memory is absent');
   expect(openclaw).toContain('sourceAnchor');
   expect(openclaw).toContain('filteredEvidence');
   expect(openclaw).toContain('--session ./one.md --session ./two.md');
   expect(openclaw).toContain('--memory ./one.md --memory ./two.md');
-  expect(hermes).toContain('cogmem-import-hermes');
+  expect(hermes).toContain('cogmem import-hermes');
   expect(hermes).toContain('~/.hermes/config.yaml');
   expect(hermes).toContain('memory.provider');
   expect(hermes).toContain('--session ./one.md --session ./two.md');
@@ -744,6 +744,7 @@ test('cogmem-connect can install the OpenClaw automatic memory plugin wrapper', 
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.ingestMode).toBe('selective_compile');
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.rememberStrategy).toBe('queued');
   expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.auditLog).toBe(true);
+  expect(openclawConfig.plugins.entries['cogmem-auto-memory'].config.publicEntrypoint).toContain('public.js');
   expect(indexBody).toContain("openclaw-auto-memory.jsonl");
   expect(indexBody).toContain("action: recalled.context ? 'inject' : 'skip'");
   expect(indexBody).toContain('function enqueueRememberJob(config, payload)');
@@ -752,6 +753,8 @@ test('cogmem-connect can install the OpenClaw automatic memory plugin wrapper', 
   const agentEndBody = indexBody.slice(indexBody.indexOf("api.on('agent_end'"));
   expect(agentEndBody).not.toContain("runBridge('remember'");
   const bridgeBody = readFileSync(join(pluginDir, 'bridge.mjs'), 'utf8');
+  expect(bridgeBody).toContain('loadCogmemApi');
+  expect(bridgeBody).toContain('publicEntrypoint');
   expect(bridgeBody).toContain('rememberTurnWithResult');
   expect(bridgeBody).toContain("ingestMode: bridgeConfig.ingestMode || 'selective_compile'");
   expect(bridgeBody).toContain("command === 'drain-remember-queue'");
@@ -814,7 +817,38 @@ test('unified cogmem CLI dispatches doctor and update commands', async () => {
   const parsed = JSON.parse(update.stdout);
   expect(parsed.command).toBe('update');
   expect(parsed.dryRun).toBe(true);
-  expect(parsed.nextCommand).toContain('@CognitiveOS/core');
+  expect(parsed.from).toBe('latest');
+  expect(parsed.releaseRepo).toBe('liuqin164/cogmem');
+  expect(parsed.targetCwd).toBe(coreRoot);
+  expect(parsed.nextCommand).toContain('cogmem@https://github.com/liuqin164/cogmem/releases/latest/download/cogmem.tgz');
+  expect(parsed.nextCommand).not.toContain('@CognitiveOS/core');
+});
+
+test('cogmem update targets the one-line installer home when cwd has no package dependency', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-update-home-'));
+  const installHome = join(dir, 'pkg');
+  const randomCwd = join(dir, 'work');
+  mkdirSync(installHome, { recursive: true });
+  mkdirSync(randomCwd, { recursive: true });
+  writeFileSync(join(installHome, 'package.json'), JSON.stringify({
+    private: true,
+    dependencies: {
+      cogmem: 'https://github.com/liuqin164/cogmem/releases/download/v2.0.0/cogmem.tgz',
+    },
+  }));
+
+  const update = await runCli(
+    ['bun', cogmemBin, 'update', '--dry-run', '--json'],
+    randomCwd,
+    { COGMEM_INSTALL_HOME: installHome },
+  );
+
+  expect(update.stderr).toBe('');
+  expect(update.exitCode).toBe(0);
+  const parsed = JSON.parse(update.stdout);
+  expect(parsed.targetCwd).toBe(installHome);
+  expect(parsed.currentSpec).toContain('cogmem.tgz');
+  expect(parsed.nextCommand).toContain('cogmem@https://github.com/liuqin164/cogmem/releases/latest/download/cogmem.tgz');
 });
 
 test('cogmem-connect installs Hermes skill into the real Hermes skills directory by default', async () => {
@@ -840,6 +874,38 @@ test('cogmem-connect installs Hermes skill into the real Hermes skills directory
   expect(parsed.hostConfigSnippet).toContain('cogmem-mcp');
   expect(existsSync(skillPath)).toBe(true);
   expect(readFileSync(skillPath, 'utf8')).toStartWith('---\nname: cogmem-memory-backend');
+});
+
+test('cogmem-connect hermes --auto patches Hermes MCP config without claiming native memory provider', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-connect-hermes-auto-'));
+  const workspace = join(dir, 'workspace');
+  const hermesConfig = join(dir, '.hermes', 'config.yaml');
+  mkdirSync(workspace);
+  mkdirSync(dirname(hermesConfig), { recursive: true });
+  writeFileSync(hermesConfig, 'model:\n  provider: test\nmcp_servers: {}\n');
+
+  const installed = await runCli([
+    'bun',
+    connectBin,
+    'hermes',
+    '--workspace',
+    workspace,
+    '--auto',
+    '--hermes-config',
+    hermesConfig,
+    '--json',
+  ], coreRoot, { HOME: dir });
+
+  expect(installed.stderr).toBe('');
+  expect(installed.exitCode).toBe(0);
+  const parsed = JSON.parse(installed.stdout);
+  expect(parsed.hermesMcp.configPath).toBe(hermesConfig);
+  expect(parsed.hermesMcp.configUpdated).toBe(true);
+  const config = readFileSync(hermesConfig, 'utf8');
+  expect(config).toContain('mcp_servers:');
+  expect(config).toContain('cogmem:');
+  expect(config).toContain('cogmem-mcp');
+  expect(config).not.toContain('memory:\n  provider: cogmem');
 });
 
 test('package exposes agent migration bins', () => {

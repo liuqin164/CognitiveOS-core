@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+const RELEASE_REPO = 'liuqin164/cogmem';
+const LATEST_RELEASE_TARBALL = `https://github.com/${RELEASE_REPO}/releases/latest/download/cogmem.tgz`;
 function readArgs(argv) {
     const values = {};
     for (let index = 0; index < argv.length; index += 1) {
@@ -23,7 +26,8 @@ function readArgs(argv) {
         dryRun: values['dry-run'] === true || values.yes !== true,
         yes: values.yes === true,
         json: values.json === true,
-        from: typeof values.from === 'string' ? values.from : 'github:liuqin164/CognitiveOS-core#main',
+        from: typeof values.from === 'string' ? values.from : 'latest',
+        installHome: typeof values['install-home'] === 'string' ? values['install-home'] : undefined,
         manager,
     };
 }
@@ -35,39 +39,71 @@ function detectManager(cwd) {
     return 'npm';
 }
 function buildCommand(manager, spec) {
+    const resolvedSpec = spec === 'latest' ? LATEST_RELEASE_TARBALL : spec;
     if (manager === 'bun')
-        return ['bun', 'add', `@CognitiveOS/core@${spec}`];
+        return ['bun', 'add', `cogmem@${resolvedSpec}`];
     if (manager === 'pnpm')
-        return ['pnpm', 'add', `@CognitiveOS/core@${spec}`];
-    return ['npm', 'install', `@CognitiveOS/core@${spec}`];
+        return ['pnpm', 'add', `cogmem@${resolvedSpec}`];
+    return ['npm', 'install', `cogmem@${resolvedSpec}`];
 }
 function installedSpec(cwd) {
-    const packagePath = join(cwd, 'package.json');
-    if (!existsSync(packagePath))
+    const manifest = readPackageManifest(cwd);
+    if (!manifest)
         return undefined;
-    const manifest = JSON.parse(readFileSync(packagePath, 'utf8'));
-    return manifest.dependencies?.['@CognitiveOS/core']
+    return manifest.dependencies?.['cogmem']
+        || manifest.devDependencies?.['cogmem']
+        || manifest.optionalDependencies?.['cogmem']
+        || manifest.dependencies?.['@CognitiveOS/core']
         || manifest.devDependencies?.['@CognitiveOS/core']
         || manifest.optionalDependencies?.['@CognitiveOS/core'];
 }
+function readPackageManifest(cwd) {
+    const packagePath = join(cwd, 'package.json');
+    if (!existsSync(packagePath))
+        return undefined;
+    return JSON.parse(readFileSync(packagePath, 'utf8'));
+}
+function defaultInstallHome(env) {
+    return env.COGMEM_INSTALL_HOME || join(env.HOME || homedir(), '.cogmem', 'pkg');
+}
+function shouldUpdateCwd(cwd) {
+    const manifest = readPackageManifest(cwd);
+    return manifest?.name === 'cogmem' || installedSpec(cwd) !== undefined;
+}
+function resolveUpdateCwd(args, env) {
+    const cwd = process.cwd();
+    if (args.installHome)
+        return args.installHome;
+    if (shouldUpdateCwd(cwd))
+        return cwd;
+    const installHome = defaultInstallHome(env);
+    if (existsSync(join(installHome, 'package.json')))
+        return installHome;
+    return cwd;
+}
 async function main() {
     const args = readArgs(process.argv.slice(2));
-    const manager = args.manager || detectManager(process.cwd());
+    const targetCwd = resolveUpdateCwd(args, process.env);
+    const manager = args.manager || detectManager(targetCwd);
     const command = buildCommand(manager, args.from);
     const result = {
         command: 'update',
         dryRun: args.dryRun,
         manager,
         from: args.from,
-        currentSpec: installedSpec(process.cwd()),
+        releaseRepo: RELEASE_REPO,
+        releaseAsset: LATEST_RELEASE_TARBALL,
+        targetCwd,
+        currentSpec: installedSpec(targetCwd),
         nextCommand: command.join(' '),
-        followUp: 'Run cogmem doctor --fix --agent openclaw --workspace <openclaw-workspace> after updating if OpenClaw auto memory is configured.',
+        followUp: 'Run cogmem doctor --fix --agent openclaw --workspace <openclaw-workspace> after updating if OpenClaw auto memory is configured. For Hermes, rerun cogmem connect hermes and reload MCP.',
     };
     if (args.json) {
         console.log(JSON.stringify(result, null, 2));
     }
     else {
         console.log(`cogmem update ${args.dryRun ? 'dry-run' : 'running'}`);
+        console.log(`target: ${result.targetCwd}`);
         console.log(`current: ${result.currentSpec || 'not listed in package.json'}`);
         console.log(`command: ${result.nextCommand}`);
         console.log(result.followUp);
@@ -75,7 +111,7 @@ async function main() {
     if (!args.dryRun) {
         const proc = Bun.spawn({
             cmd: command,
-            cwd: process.cwd(),
+            cwd: targetCwd,
             stdout: 'inherit',
             stderr: 'inherit',
         });

@@ -97,7 +97,7 @@ describe('topic namespace storage and migration', () => {
   });
 
   test('MemoryGraph opens pre-0011 neuron tables before creating the topic index', () => {
-    const dbPath = `/tmp/agent-brain-topic-compat-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+    const dbPath = `/tmp/cogmem-topic-compat-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
     const db = new Database(dbPath);
     db.exec(`
       CREATE TABLE neurons (

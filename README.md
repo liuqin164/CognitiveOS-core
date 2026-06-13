@@ -1,301 +1,107 @@
-# @CognitiveOS/core
+# cogmem
 
-Durable, local-first memory for agent frameworks.
+Agent-native memory kernel for a single AI agent.
 
-`@CognitiveOS/core` is the standalone memory kernel. It does not import or require CognitiveOS. Use it when an agent such as OpenClaw, Hermes, LangGraph, or a custom runtime needs long-term memory with recall, provenance, snapshots, optional PII redaction, and optional encryption.
+`cogmem` is a local-first memory backend for agents and agent frameworks. It stores raw experience, preserves provenance, curates long-term memory candidates, governs what becomes active memory, and recalls bounded context with source anchors.
 
-## Install
+It is not a knowledge-base app, a note-taking app, a vector RAG wrapper, an Obsidian replacement, an agent runtime, or a task scheduler.
 
-`@CognitiveOS/core` 2.0.0-rc.1 is a GitHub-only open-source release. It is not published to npm; install it from the GitHub repository or tag used for the core package.
+## Status
 
-```bash
-export COGMEM_CORE_REPO="github:<owner>/CognitiveOS-core#v2.0.0-rc.1"
-bun add "$COGMEM_CORE_REPO"
-```
+Current version: `2.0.0`
 
-Core uses Bun because the default storage path uses `bun:sqlite`.
-
-## Configure
-
-For new users, start with the interactive wizard:
+Distribution: GitHub Releases. The package is installed from release tarballs, not npm publishing.
 
 ```bash
-./node_modules/.bin/cogmem-init
-./node_modules/.bin/cogmem-doctor
+curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash
 ```
 
-For automation or CI smoke tests:
+The installer:
+
+1. Ensures Bun is available.
+2. Installs the latest `cogmem` release asset into `~/.cogmem/pkg`.
+3. Links the `cogmem` CLI into `~/.bun/bin`.
+4. Starts the interactive setup wizard.
+
+To skip the wizard:
 
 ```bash
-./node_modules/.bin/cogmem-init --yes --agent none --dry-run
+COGMEM_SKIP_INIT=1 curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash
 ```
 
-The wizard creates a stable Cogmem home directory. By default this is `~/.cogmem`; project-local installs can use `cogmem-init --scope project`.
+## What cogmem Is For
+
+Use cogmem when an agent needs durable memory across sessions:
+
+- Conversations with the user.
+- Explicit user preferences, goals, constraints, and boundaries.
+- Task events, tool observations, diagnostic conclusions, failures, and corrections.
+- Imported memory files from OpenClaw, Hermes, transcripts, Markdown, JSON, CSV, or TSV.
+- Governed recall that can explain why something was remembered and where the evidence came from.
+
+The intended integration surface is:
+
+- `KernelAgentMemoryBackend` for agent/framework code.
+- `cogmem` CLI for setup, import, recall, audit, curation, and repair.
+- MCP tools for hosts such as Hermes.
+- A host plugin wrapper for OpenClaw automatic recall and turn recording.
+
+## What cogmem Is Not
+
+cogmem intentionally does not provide:
+
+- Agent task execution.
+- Shell, deploy, or tool runtime.
+- App store, skill runtime, approval queue, or channel gateway.
+- Telegram, Discord, browser, or web UI integrations.
+- Multi-agent shared team memory.
+- A human PKM/wiki/Obsidian replacement.
+- A default “embed every sentence forever” vector store.
+
+The current release is designed as the memory backend for one agent brain. Multiple agents can each have their own cogmem database and project scope, but this version does not implement conflict-safe shared memory for an agent team.
+
+## Architecture
+
+cogmem separates memory into layers:
 
 ```text
-~/.cogmem/
-  config.toml
-  memory.db
-  embeddings/
-  snapshots/
-  logs/
+Raw Ledger
+  Complete chronological event archive: messages, tool calls, tool results, task events.
+
+Metadata / FTS Index
+  Lightweight keyword, source, time, project, and thread indexing for exact lookup.
+
+Compiled Memory
+  Governed summaries, preferences, constraints, goals, lessons, diagnostics, and topic memories.
+
+Dream Curator
+  Background curation worker that reads raw ledger windows and proposes candidates only.
+
+CPU Governance
+  Rule-based promotion, suppression, supersession, and confirmation policy.
+
+Active Recall
+  Bounded context pack assembled with pulse activation, temporal routing, source anchors, and inhibition.
 ```
 
-The main configuration lives at `~/.cogmem/config.toml`:
+The core rule is:
 
-```toml
-[core]
-db_path = "memory.db"
-vector_backend = "sqlite-vec"
-vector_dimension = 384
+> Raw evidence is preserved. Active memory is selective.
 
-[governance]
-pii_redact_email = true
-pii_redact_phone = true
-pii_redact_ssn = true
-encryption = false
+Every derived memory should point back to raw ledger evidence. If a memory cannot support an exact quote, the recall result marks it accordingly.
 
-[memory_model]
-provider = "rule_only"
-```
+## Model Requirements
 
-Set `core.vector_dimension` to match the embedding model output. For example, `qwen3-embedding:8b` uses 4096 dimensions. High dimensions are supported, but `cogmem-doctor` warns at 2048+ dimensions because 4096-dimensional Float32 vectors use about 1.53 GiB for 100,000 memories before SQLite/index overhead.
+cogmem can run in `rule_only` mode, but production-quality semantic recall needs at least an embedding model. Dream curation needs a chat model.
 
-TOML is the only configuration entrypoint. Environment variables are not read as global kernel configuration; they are only interpolated when explicitly referenced inside `config.toml`, for example `api_key = "${ANTHROPIC_API_KEY}"`.
-
-`[memory_model]` controls optional Memory Curator / Dream Worker LLM assistance. Leave it as `rule_only` for the deterministic local curator. To let the curator propose richer candidates with a local Ollama chat model, use OpenAI-compatible Ollama:
-
-```toml
-[memory_model]
-provider = "openai_compatible"
-base_url = "http://localhost:11434/v1"
-model = "qwen2.5:7b"
-api_key = ""
-timeout_ms = 60000
-```
-
-For a cloud OpenAI-compatible endpoint, configure it explicitly:
-
-```toml
-[memory_model]
-provider = "openai_compatible"
-base_url = "https://api.openai.com/v1"
-model = "gpt-4o-mini"
-api_key = "${OPENAI_API_KEY}"
-timeout_ms = 60000
-```
-
-The LLM is a curator only: it proposes memory candidates from raw ledger windows. CPU governance decides whether a candidate stays `candidate`, becomes `needs_confirmation`, or is later promoted/superseded/archived.
-
-## SDK Quickstart
-
-```ts
-import { createMemoryKernelFromConfig } from '@CognitiveOS/core';
-
-const kernel = createMemoryKernelFromConfig();
-
-await kernel.ingest({
-  content: 'The build must run with Bun because storage uses bun:sqlite.',
-  projectId: 'demo-agent',
-});
-
-const recall = kernel.recall('what runtime does the build use?', {
-  projectId: 'demo-agent',
-  limit: 5,
-});
-
-console.log(recall.rawEvidence.map((item) => item.content));
-```
-
-## Agent Backend Facade
-
-External agents should prefer `KernelAgentMemoryBackend` over low-level graph APIs.
-
-```ts
-import { KernelAgentMemoryBackend, createMemoryKernelFromConfig } from '@CognitiveOS/core';
-
-const kernel = createMemoryKernelFromConfig();
-const memory = new KernelAgentMemoryBackend(kernel);
-
-await memory.rememberTurn({
-  agentId: 'openclaw',
-  projectId: 'workspace-a',
-  sessionId: 'session-1',
-  userText: 'Use sqlite-vec for the public release.',
-  assistantText: 'Stored.',
-  ingestMode: 'selective_compile',
-});
-
-const result = memory.recall({
-  agentId: 'openclaw',
-  projectId: 'workspace-a',
-  query: 'which vector backend should the release use?',
-});
-
-console.log(result.recallMode); // "universe_navigation" unless the old recall path was needed
-console.log(result.narrative?.headline);
-console.log(result.pulseTrace);
-console.log(result.temporalTraversal?.labels);
-console.log(result.items);
-```
-
-`KernelAgentMemoryBackend.recall()` routes through universe navigation first. That means core activates related entities, temporal branches, and graph neighbors, assembles a narrative summary, and returns context that is already prepared for the agent. `MemoryKernel.recall()` remains available as the lower-level BrainRecall path; the backend uses it only as a fallback when universe navigation yields no scoped evidence. If both compiled recall paths miss, the backend can use bounded raw ledger FTS as `raw_ledger_fallback`; this returns only matching raw snippets within the evidence limit and does not dump whole threads into the prompt. Hosts can expose the same path as an active memory search command through `cogmem memory recall --query "<question>" --project <project> --agent <agent> --json`; this is the recommended fallback when automatic prompt injection is empty or too thin.
-
-Adapters may pass `sessionId`, `threadId`, `excludeSessionId`, `intent`, `anchorEventId`, and `anchorText` when the user asks for session-aware or forensic recall. `KernelAgentMemoryBackend.recall()` compiles the user's raw question into a bounded `queryPlan` before search, so long questions such as "do you remember when we discussed CogMem Memory Context and the memory black box" are distilled into stable recall cues instead of using the full sentence as a brittle vector/FTS query. The query plan includes `semanticCuePhrases` and `temporalHints`, so wording drift such as "对话存档位置属于黑盒" versus "记忆黑盒问题" can still reach raw ledger evidence through cues like `记忆 黑盒`, `存档 黑盒`, and `黑盒`. `intent: "previous_session_summary"` reads the previous completed session from the chronological ledger instead of guessing through semantic recall. `intent: "forensic_quote"` returns raw user/source events with `sourceAnchor`, `sourceContext`, and `canAnswerExactQuote=true`; follow-up questions such as "what were my exact words" can pass the previous recall anchor to drill down to the raw event. Compiled memories and imported summaries set `canAnswerExactQuote=false` and must not be presented as exact wording, but they may still include `sourceContext` and a `sourceLocator` command such as `cogmem memory show --event <eventId> --before 2 --after 2` so the agent can inspect the original raw event and surrounding context. This keeps chronological replay separate from ranked context recall.
-
-Turn recording supports four modes:
-
-- `immediate_compile`: legacy behavior; records raw events and immediately creates compiled vector-backed memory.
-- `selective_compile`: records every raw turn but only compiles durable signals such as explicit preferences, constraints, corrections, decisions, goals, failures, lessons, and procedures.
-- `raw_archive_only`: records only raw ledger events for replay/audit.
-- `raw_then_dream`: records raw events and exposes dream backlog status for later consolidation.
-
-For OpenClaw/Hermes automatic turn recording with high-dimensional Qwen embeddings, prefer `selective_compile` or `raw_then_dream`. This keeps full raw evidence while avoiding a high-dimensional vector for every sentence.
-
-Run the dream curator when `raw_then_dream` backlog exists:
-
-```ts
-const result = await kernel.runDreamCurator({ projectId: 'workspace-a', limit: 100 });
-console.log(result.candidateCount);
-console.log(kernel.listDreamCandidates({ projectId: 'workspace-a', statuses: ['candidate'] }));
-console.log(kernel.promoteDreamCandidates({ projectId: 'workspace-a', limit: 100 }).queue);
-```
-
-The curator is candidate-only. In `rule_only` mode it is deterministic and local-first. It creates window summaries, explicit preference/constraint candidates, correction candidates, semantic tag candidates, indexing decision candidates, event relation candidates, and edge-adjustment candidates. When `[memory_model]` is configured with an OpenAI-compatible chat endpoint, it can also ask the memory model to propose richer candidates: user preferences, project memories, long-term goals, prohibitions/boundaries, failure lessons, diagnostic conclusions, session summaries, topic summaries, temporal fact updates, conflicts, semantic tags, indexing decisions, semantic relations, and edge adjustments. All candidates are stored in the deep-write governance queue with raw event source anchors. It does not create hot vectors, does not delete raw ledger events, and does not promote candidates to verified facts.
-
-Candidate generation and governance are separate. `runDreamCurator()` proposes candidates; `promoteDreamCandidates()` applies CPU governance. Governance can promote source-anchored summaries and explicit user preferences as provisional memory, accept semantic tags/indexing decisions/event relations/edge adjustments as promoted organization metadata, keep uncertain claims in `needs_confirmation`, or reject/supersede stale diagnostics. It does not turn tool output or LLM inference into verified facts.
-
-Core exposes schedule helpers for hosts that want background curation without turning core into a daemon:
-
-- `manual`: an operator or agent runs `cogmem memory dream`.
-- `interval`: cron/systemd runs it every N milliseconds.
-- `daily`: cron/systemd runs it at configured local times, such as `03:30` and `15:30`.
-- `continuous`: the host adapter or process manager runs `cogmem memory dream --watch --promote` when raw backlog should be processed continuously.
-
-Use `describeDreamCuratorWorkflow()` and `nextDreamCuratorRunAt()` to make schedules explicit in adapters. The host owns timers and process lifetime; core only processes bounded ledger windows. For a foreground long-running worker:
-
-```bash
-./node_modules/.bin/cogmem memory dream --project openclaw --watch --interval-ms 300000 --promote --json
-```
-
-For one-shot maintenance:
-
-```bash
-./node_modules/.bin/cogmem memory dream --project openclaw --promote --json
-./node_modules/.bin/cogmem memory govern --project openclaw --json
-```
-
-Provider warning candidates are diagnostic signals, not memory. Repeated identical provider failures are deduplicated; once a later curation run returns valid structured output, older provider warnings are marked `superseded`.
-
-## Memory Model
-
-Core separates raw chronological evidence from ranked recall. The Chronological Memory Ledger records ordered raw events for replay and audit; governed recall ranks memories by relevance, importance, confidence, recency, scope, pulse activation, and inhibition.
-
-Use `MemoryKernel.getThreadEvents(threadId)` to replay raw events in ledger order and `MemoryKernel.getEventContext(eventId, { before, after })` to inspect surrounding source context. Use `KernelAgentMemoryBackend.recall()` for current agent context. Do not use replay as a prompt dump.
-
-Use `MemoryKernel.searchRawEvents(query, { projectId })` when you need to find original raw evidence that may not have compiled memory or a hot vector. This raw FTS/metadata path is for source discovery and cold recall; it is not the default agent context ranking path.
-
-Existing OpenClaw/Hermes importers now write raw ledger anchors for imported records before ingesting compiled/index memory. Imported daily summaries remain `imported_summary` evidence with `canAnswerExactQuote=false`, but they are searchable through raw ledger and can carry `sourceContext` so an agent can say where the summary came from instead of treating it as a black box.
-
-If an older CogMem version already imported legacy records before raw ledger anchors existed, backfill the anchors without duplicating compiled memory or vectors:
-
-```bash
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --config .cogmem/config.toml --reindex-raw --json
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --config .cogmem/config.toml --reindex-raw --json
-```
-
-Vector pruning is not memory pruning. `cogmem compact` deletes only eligible vector blobs from `vector_index`; it does not delete raw ledger events, sourceRefs, chronological ordering, or tool-call parent/child links.
-
-Semantic memories can point back to raw events through `sourceRefs`; `explainRecallWithKernel()` includes `sourceAnchor` when provenance is available. See `MEMORY_MODEL.md` and `RECALL_EXPLAINABILITY.md`.
-
-External agents can record lifecycle events through the narrow facade without importing host runtime concepts:
-
-```ts
-await memory.ingestToolCall({
-  agentId: 'openclaw',
-  projectId: 'workspace-a',
-  sessionId: 'session-1',
-  threadId: 'thread-1',
-  assistantEventId,
-  toolCallId: 'call-1',
-  toolName: 'read_file',
-  input: { path: 'migration.ts' },
-});
-
-await memory.ingestToolObservation({
-  agentId: 'openclaw',
-  projectId: 'workspace-a',
-  sessionId: 'session-1',
-  threadId: 'thread-1',
-  toolCallEventId,
-  toolCallId: 'call-1',
-  toolName: 'read_file',
-  output: 'migration.ts contains an idempotent ALTER TABLE.',
-});
-```
-
-`ingestToolObservation()` stores a raw `tool_result` ledger event and an `external_tool` semantic evidence candidate with `sourceRefs`. It does not promote tool output into a verified fact.
-
-## Governed Recall And Explainability
-
-Agent-facing recall is governed by default. `KernelAgentMemoryBackend.recall()`, `MemoryKernel.navigateMemory()`, and `BrainRecall` exclude non-recallable evidence from active context before returning `rawEvidence` or backend `items`.
-
-- `rawEvidence` contains evidence allowed to enter active agent context.
-- `filteredEvidence` is available from `MemoryKernel.navigateMemory()` and `explainRecallWithKernel()` for forensic recall/explain flows. It records same-project candidates that were not included.
-- `reason` stays backward compatible. For governance filtering it remains `status_suppressed`; for budget filtering it is `over_context_limit`.
-- `governanceReason` is an optional refinement for `status_suppressed`, such as `archived`, `suspect_llm_inference`, `suspect_external_tool_observation`, or `suspect_unverified_claim`.
-
-Raw user utterances may be recalled as provenance evidence when they are explicitly tagged as raw user evidence (`sourceType: 'user_input'`, `reliability:raw_utterance`, `role:user`, and `record:raw_utterance` or `record:conversation_message`). This does not promote the utterance into a durable fact; it only allows the original user statement to be inspected as evidence. Suspect LLM inference, suspect tool observation, and unverified suspect claims stay out of active context.
-
-Use `cogmem-explain-recall --json` or the `cogmem_explain_recall` MCP tool to inspect `filteredEvidence`, `governanceReason`, activation paths, and narrative recall reasons. Explain output is project-scoped; filtered evidence from other projects is not exposed in a scoped explain result.
-
-Core is an agent memory kernel, not a knowledge-base application, wiki front end, Obsidian replacement, UI dashboard, or agent framework. Markdown imports and exports are projections/adapters; the source of truth is the kernel store and public API.
-
-## Import Existing Agent Memory
-
-Use the import tools when an external agent already has memory files and needs to migrate them into the kernel store. Always run `--dry-run` first. Import is project-scoped and idempotent; re-running against the same database skips records already processed by the cursor store.
-
-Imported records are embedded through the configured kernel embedder. To import through a local quantized embedding model, configure the kernel before running the importer. For example, with Ollama:
-
-JSON/JSONL/CSV/TSV transcript exports should be normalized before batch ingestion. The normalizer emits per-message source anchors so imported `sourceRefs` preserve original array order, CSV row line, or block ordinal when available.
-
-Normalize a JSON array transcript:
-
-```bash
-./node_modules/.bin/cogmem-normalize-transcript \
-  --input ./memory.json \
-  --output ./memory.normalized.md \
-  --family json-array \
-  --dry-run --json
-
-./node_modules/.bin/cogmem-normalize-transcript \
-  --input ./memory.json \
-  --output ./memory.normalized.md \
-  --family json-array
-```
-
-Normalize CSV or TSV transcript exports:
-
-```bash
-./node_modules/.bin/cogmem-normalize-transcript \
-  --input ./memory.csv \
-  --output ./memory.normalized.md \
-  --family csv \
-  --dry-run --json
-
-./node_modules/.bin/cogmem-normalize-transcript \
-  --input ./memory.tsv \
-  --output ./memory.normalized.md \
-  --family tsv
-```
-
-Supported `--family` values are `json-array`, `jsonl`, `csv`, `tsv`, `app-private-mixed-event`, and `jsonl-mixed-event-log`. If omitted, `.json`, `.jsonl`, `.csv`, and `.tsv` are inferred from the input extension.
-
-The output is normalized conversation Markdown. Each normalized message includes an `agent-brain-source-ref` comment when the original source offset, JSON array index, CSV row line, or ordering confidence is available. `cogmem-normalize-transcript` does not open a memory database, run recall, change pulse activation, or install runtime features; it only prepares source-preserving Markdown for later import.
+Recommended local setup with Ollama:
 
 ```bash
 ollama pull qwen3-embedding:0.6b
+ollama pull qwen2.5:7b
 ```
+
+Example `.cogmem/config.toml`:
 
 ```toml
 [core]
@@ -307,223 +113,329 @@ vector_dimension = 1024
 provider = "openai_compatible"
 base_url = "http://localhost:11434/v1"
 model = "qwen3-embedding:0.6b"
+timeout_ms = 30000
+
+[memory_model]
+provider = "openai_compatible"
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5:7b"
+api_key = ""
+timeout_ms = 60000
 ```
 
-Set `core.vector_dimension` to the embedding model output dimension. `qwen3-embedding:0.6b` uses 1024 dimensions, `qwen3-embedding:4b` uses 2560 dimensions, and `qwen3-embedding:8b` uses 4096 dimensions.
+Vector dimensions must match the embedding model:
 
-OpenClaw default workspace import:
+- `qwen3-embedding:0.6b`: `1024`
+- `qwen3-embedding:4b`: `2560`
+- `qwen3-embedding:8b`: `4096`
+
+High-dimensional vectors grow quickly. Prefer `raw_then_dream` or `selective_compile` for long-running agents.
+
+## Quick Start
+
+Install globally:
 
 ```bash
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --dry-run
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw
+curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash
 ```
 
-The importer prints source-level and record-level progress to stderr during real non-JSON imports, including the embedding+ingest stage. JSON output stays on stdout; pass `--json --progress` to keep machine-readable stdout while streaming progress to stderr. Use `--no-progress` for quiet automation.
-
-OpenClaw explicit single-file or batch import:
+Or install into an existing Bun workspace:
 
 ```bash
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --session ./one.md
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --session ./one.md --session ./two.md
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --memory ./one.md
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --memory ./one.md --memory ./two.md
+bun add "cogmem@https://github.com/liuqin164/cogmem/releases/latest/download/cogmem.tgz"
+bunx cogmem init
 ```
 
-Hermes default workspace import:
+Validate configuration:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --dry-run
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes
+cogmem doctor
 ```
 
-Hermes explicit path import:
+Run the Dream Curator once and promote safe candidates through CPU governance:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
+cogmem memory dream --project my-agent --promote --json
 ```
 
-Pass `--json` when automation needs machine-readable counts for scanned sources, parsed records, ingested records, skipped records, and source-level results. The importers migrate memory evidence only; they do not install host runtime features, task schedulers, channels, dashboards, or application code.
+Run it as a foreground worker supervised by your host:
+
+```bash
+cogmem memory dream --project my-agent --watch --interval-ms 300000 --promote --json
+```
+
+Inspect queue state:
+
+```bash
+cogmem memory status --project my-agent --json
+cogmem memory candidates --project my-agent --status candidate --json
+cogmem memory govern --project my-agent --json
+```
+
+## Import Existing Agent Memory
+
+Configure the embedding provider before importing. Imported records are embedded through the configured kernel embedder, so the configured `vector_dimension` must match the selected embedding model.
+
+For local quantized embeddings with Ollama:
+
+```bash
+ollama pull qwen3-embedding:0.6b
+```
+
+```toml
+[embedding]
+provider = "openai_compatible"
+base_url = "http://localhost:11434/v1"
+model = "qwen3-embedding:0.6b"
+```
+
+Always preview an import with `--dry-run` first.
+
+OpenClaw:
+
+```bash
+cogmem import-openclaw --workspace . --project openclaw --dry-run
+cogmem import-openclaw --workspace . --project openclaw
+cogmem import-openclaw --workspace . --project openclaw --session ./one.md
+cogmem import-openclaw --workspace . --project openclaw --session ./one.md --session ./two.md
+cogmem import-openclaw --workspace . --project openclaw --memory ./one.md
+cogmem import-openclaw --workspace . --project openclaw --memory ./one.md --memory ./two.md
+```
+
+Hermes:
+
+```bash
+cogmem import-hermes --workspace . --project hermes --dry-run
+cogmem import-hermes --workspace . --project hermes
+cogmem import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
+cogmem import-hermes --workspace . --project hermes --session ./one.md
+cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
+```
+
+Imports are idempotent. Re-running the same import skips records already processed by the cursor store. Use `--json --progress` when a host agent needs machine-readable output while still receiving progress on stderr.
+
+Normalize JSON, JSONL, CSV, or TSV transcripts before import when the source format needs explicit ordering anchors:
+
+```bash
+cogmem normalize-transcript --input ./export.json --output ./normalized.md --family json-array --dry-run --json
+cogmem normalize-transcript --input ./export.csv --output ./normalized.md --family csv --dry-run --json
+cogmem-normalize-transcript --input ./export.json --output ./normalized.md --family json-array --dry-run --json
+```
+
+Normalization writes Markdown with `cogmem-source-ref` markers for raw offset, line, and ordering confidence. A dry run validates and summarizes the transcript only; it does not open a memory database.
 
 ## OpenClaw
 
-Core includes a first-party OpenClaw workspace profile. It recognizes `USER.md`, `SOUL.md`, `PERSONA.md`, `MEMORY.md`, `memory/YYYY-MM-DD.md`, `memory/YYYY-MM-DD-<slug>.md`, and session export folders.
+OpenClaw is the most complete host integration in this release.
 
-To install the agent-facing skill file into an OpenClaw workspace:
-
-```bash
-./node_modules/.bin/cogmem-connect openclaw --workspace .
-```
-
-This writes `<workspace>/skills/cogmem-memory/SKILL.md`, OpenClaw's workspace skill location. The skill tells an agent how to install, validate, dry-run migration, migrate, and wire `KernelAgentMemoryBackend` without changing OpenClaw host config automatically.
-
-To make OpenClaw automatically recall and record memory on every future turn, install the first-party local plugin wrapper:
+From the OpenClaw workspace:
 
 ```bash
-./node_modules/.bin/cogmem-connect openclaw --workspace . --auto --force
+cd ~/.openclaw/workspace
+cogmem init --agent openclaw --scope project
+cogmem doctor
+cogmem connect openclaw --workspace . --auto --force
 ```
 
-`--auto` writes `<workspace>/extensions/cogmem-auto-memory/`, patches OpenClaw `plugins.load.paths`, and enables the plugin entry with `hooks.allowPromptInjection=true` and `hooks.allowConversationAccess=true`. The wrapper registers `before_prompt_build` for governed recall and `agent_end` for turn recording. `agent_end` uses queued remember by default: it appends a durable JSONL job under `.cogmem/queue/` and spawns a background drain process, so slow embeddings or SQLite writes do not block Telegram/gateway response delivery. It calls `KernelAgentMemoryBackend` through `@CognitiveOS/core` public API via a Bun bridge; core still does not import OpenClaw or become an OpenClaw runtime.
-
-The OpenClaw wrapper injects retrieved history under `# CogMem Retrieved Memory`. Current conversation context remains OpenClaw-owned and separate from long-term memory. The wrapper uses a small CPU intent router: "previous session" style questions pass `intent: "previous_session_summary"` and exclude the current session; exact wording questions pass `intent: "forensic_quote"` and require raw ledger anchors. Imported `memory/YYYY-MM-DD.md` summaries remain provenance support and are marked `canAnswerExactQuote=false`, so an agent should say it only has a summary when raw source text is unavailable.
-
-When debugging recall, use:
+Import existing OpenClaw memory:
 
 ```bash
-./node_modules/.bin/cogmem-explain-recall --query "<user question>" --project openclaw --agent openclaw --json
+cogmem import-openclaw --workspace . --project openclaw --dry-run
+cogmem import-openclaw --workspace . --project openclaw
 ```
 
-The JSON explains `sourceAnchor`, `activationPath`, `whyMatched`, `filteredEvidence`, and `governanceReason`. Keep normal prompt injection compact; do not inject full debug output into ordinary agent turns.
-
-If an existing installation needs repair after an update:
+If you imported old memory before raw ledger anchors existed:
 
 ```bash
-./node_modules/.bin/cogmem-doctor --fix --agent openclaw --workspace .
+cogmem import-openclaw --workspace . --project openclaw --config .cogmem/config.toml --reindex-raw --json
 ```
 
-OpenClaw config is still OpenClaw-owned (`memory.backend` supports backends such as `"builtin"` and `"qmd"`). Do not add unknown host config fields for CognitiveOS-core and do not write `plugins.slots.memory`. Runtime integration must go through the installed local plugin wrapper or another explicit adapter that calls the public kernel API.
+`cogmem connect openclaw --auto` installs a local OpenClaw plugin wrapper under:
 
-Run the command after configuration to migrate existing OpenClaw memory into the kernel:
+```text
+<workspace>/extensions/cogmem-auto-memory/
+```
+
+The wrapper registers:
+
+- `before_prompt_build`: governed recall and prompt context injection.
+- `agent_end`: queued turn recording so slow embedding/database writes do not block responses.
+
+After updates or config drift:
 
 ```bash
-./node_modules/.bin/cogmem-init --agent openclaw --scope project
-./node_modules/.bin/cogmem-doctor
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --dry-run
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw
-./node_modules/.bin/cogmem-connect openclaw --workspace . --auto --force
+cogmem doctor --fix --agent openclaw --workspace .
 ```
-
-This installs and validates the kernel store, migrates existing OpenClaw memory evidence, installs the agent-facing workspace skill, and installs the local automatic memory plugin. Restart the OpenClaw Gateway after changing plugin code, hook policy, or `plugins.load.paths`.
-
-```ts
-import { OpenClawWorkspaceProfile, createMemoryKernelFromConfig } from '@CognitiveOS/core';
-
-const kernel = createMemoryKernelFromConfig();
-const profile = new OpenClawWorkspaceProfile(process.cwd());
-
-for (const source of profile.buildInstalledBatchSources({ projectId: 'openclaw' })) {
-  // Use MarkdownSourceLoader plus the exported source adapters to ingest source records.
-  console.log(source);
-}
-```
-
-See `examples/openclaw-backend/README.md` and `examples/openclaw-backend/SKILL.md`.
 
 ## Hermes
 
-Core includes a conservative Hermes profile for filesystem-based memory exports:
+Hermes integration is MCP-based in this release. cogmem does not claim to be a native Hermes memory provider.
 
-- `profile.md` as durable profile/persona memory
-- `sessions/**/*.md` as conversation/session memory
-
-To install the agent-facing skill file into a Hermes workspace:
+Install the skill and patch Hermes MCP config:
 
 ```bash
-./node_modules/.bin/cogmem-connect hermes --workspace .
+cogmem init --agent hermes
+cogmem connect hermes --workspace /path/to/hermes/workspace --auto --force
 ```
 
-This writes `~/.hermes/skills/cogmem-memory/SKILL.md`, Hermes's primary skill location. The skill tells an agent how to install, validate, dry-run migration, migrate, wire `KernelAgentMemoryBackend`, and add the optional `cogmem-mcp` server without changing `~/.hermes/config.yaml` automatically.
+This installs the agent-facing skill at:
 
-Run the command after configuration to migrate existing Hermes memory into the kernel:
+```text
+~/.hermes/skills/cogmem-memory/SKILL.md
+```
+
+With `--auto`, it adds a `cogmem` MCP server entry to:
+
+```text
+~/.hermes/config.yaml
+```
+
+Then reload MCP inside Hermes:
+
+```text
+/reload-mcp
+```
+
+Import existing Hermes memory:
 
 ```bash
-./node_modules/.bin/cogmem-init --agent hermes
-./node_modules/.bin/cogmem-doctor
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --dry-run
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes
+cogmem import-hermes --workspace /path/to/hermes/workspace --project hermes --dry-run
+cogmem import-hermes --workspace /path/to/hermes/workspace --project hermes
 ```
 
-If a Hermes install uses different paths, pass `profilePath` and `sessionDir` explicitly.
+If Hermes stores memory in non-default paths, pass explicit files:
+
+```bash
+cogmem import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
+cogmem import-hermes --workspace . --project hermes --session ./sessions/one.md
+```
+
+## Agent-Facing Recall
+
+Agents should not search legacy Markdown files first. They should ask cogmem:
+
+```bash
+cogmem memory recall --query "what did we discuss about memory black boxes?" --project openclaw --agent openclaw --json
+```
+
+Useful intents:
+
+```bash
+cogmem memory recall --query "上个会话我们聊了什么" --intent previous_session_summary --project openclaw --agent openclaw --json
+cogmem memory recall --query "我当时关于记忆黑盒的原话是什么" --intent forensic_quote --project openclaw --agent openclaw --json
+```
+
+Recall results include:
+
+- `sourceType`
+- `sourceAnchor`
+- `sourceContext`
+- `canAnswerExactQuote`
+- `whyMatched`
+- `governanceReason`
+
+If `canAnswerExactQuote=false`, the agent must not present the item as the user's original wording. It should use `sourceContext` or run the locator command:
+
+```bash
+cogmem memory show --event <eventId> --before 2 --after 2 --json
+```
+
+## TypeScript API
 
 ```ts
-import { HermesWorkspaceProfile } from '@CognitiveOS/core';
+import {
+  KernelAgentMemoryBackend,
+  createMemoryKernelFromConfig,
+} from 'cogmem';
 
-const profile = new HermesWorkspaceProfile(process.cwd());
-const sources = profile.buildSourceDefinitions({
-  projectId: 'hermes',
-  profilePath: 'profile.md',
-  sessionDir: 'sessions',
+const kernel = createMemoryKernelFromConfig();
+const memory = new KernelAgentMemoryBackend(kernel);
+
+await memory.rememberTurn({
+  agentId: 'openclaw',
+  projectId: 'openclaw',
+  sessionId: 'session-1',
+  userText: 'Remember that this project is local-first.',
+  assistantText: 'Stored.',
+  ingestMode: 'raw_then_dream',
 });
 
-console.log(sources);
+const recalled = memory.recall({
+  agentId: 'openclaw',
+  projectId: 'openclaw',
+  query: 'what did I say about local-first memory?',
+});
+
+console.log(recalled.narrative);
+console.log(recalled.items);
 ```
 
-See `examples/hermes-backend/README.md` and `examples/hermes-backend/SKILL.md`.
+## Updating
+
+```bash
+cogmem update --yes
+```
+
+`cogmem update` installs the latest release asset from:
+
+```text
+https://github.com/liuqin164/cogmem/releases/latest
+```
+
+For OpenClaw after an update:
+
+```bash
+cd ~/.openclaw/workspace
+cogmem doctor --fix --agent openclaw --workspace .
+```
+
+For Hermes after an update:
+
+```bash
+cogmem connect hermes --workspace /path/to/hermes/workspace --auto --force
+```
 
 ## CLI
 
-```bash
-cogmem                   # unified command dispatcher: cogmem doctor, cogmem connect, cogmem update
-cogmem-init              # interactive setup
-cogmem-doctor            # validates config.toml and opens the kernel; --storage reports vector/raw ledger storage pressure; --fix repairs OpenClaw auto wiring
-cogmem-connect           # install OpenClaw/Hermes agent-facing SKILL.md files; openclaw --auto installs runtime hooks
-cogmem-update            # package update helper; equivalent to cogmem update
-cogmem-compact           # dry-run or apply vector-only compaction; defaults to dry-run unless --apply is passed
-cogmem-memory            # local audit console for memory status/list/search/show
-cogmem-explain-recall    # explain pulse/temporal/narrative recall decisions
-cogmem-mcp               # stdio MCP server exposing cogmem memory tools
-cogmem-import-openclaw   # migrate OpenClaw workspace memory into core
-cogmem-import-hermes     # migrate Hermes profile/session memory into core
-cogmem-normalize-transcript # normalize JSON/JSONL/CSV/TSV transcript exports to source-ref Markdown
-cogmem-snapshot          # export/import snapshot helper
-cogmem-re-embed          # re-embedding helper
-cogmem-migrate-vectors   # vector backend migration helper; uses config vector_dimension unless --dimension is passed
+```text
+cogmem init
+cogmem doctor
+cogmem connect openclaw|hermes
+cogmem update
+cogmem memory recall|search|show|dream|govern|candidates|status
+cogmem import-openclaw
+cogmem import-hermes
+cogmem normalize-transcript
+cogmem snapshot export|import
+cogmem compact
+cogmem re-embed
+cogmem migrate-vectors
+cogmem mcp
 ```
 
-Storage inspection and safe vector compaction:
+## Release Checks
 
 ```bash
-./node_modules/.bin/cogmem-doctor --storage
-./node_modules/.bin/cogmem compact --dry-run --status archived,suspect,cold --json
-./node_modules/.bin/cogmem compact --apply --status archived,suspect
-```
-
-Run `--dry-run` first. Use `--apply` only after snapshotting the database and ensuring no live writer is active.
-
-Memory audit console:
-
-```bash
-./node_modules/.bin/cogmem memory status --config .cogmem/config.toml
-./node_modules/.bin/cogmem memory list --project openclaw --json
-./node_modules/.bin/cogmem memory search --query "记忆 黑盒" --project openclaw --json
-./node_modules/.bin/cogmem memory recall --query "我们之前是不是讨论过记忆黑盒的问题" --project openclaw --agent openclaw --json
-./node_modules/.bin/cogmem memory show --event evt-... --before 2 --after 2 --json
-./node_modules/.bin/cogmem memory dream --project openclaw --promote --json
-./node_modules/.bin/cogmem memory dream --project openclaw --watch --interval-ms 300000 --promote --json
-./node_modules/.bin/cogmem memory govern --project openclaw --json
-./node_modules/.bin/cogmem memory candidates --project openclaw --status candidate --json
-```
-
-`cogmem memory` is intentionally a local provenance console, not a wiki, Obsidian replacement, or hosted dashboard. Use it to inspect raw ledger anchors, source context, vector pressure, dream backlog coverage, and the candidate governance queue when the injected prompt context feels like a black box.
-
-Benchmark groups are documented in `BENCHMARKS.md`; `memory_natural_emergence` tracks recall, inhibition, leakage, provenance, budget, and pulse expansion metrics.
-
-## Public API Policy
-
-The package entrypoint exports explicit stable and beta symbols only. Internal implementation stores and compilers are not exported from `@CognitiveOS/core`.
-
-Stable integration APIs include `MemoryKernel`, `createMemoryKernelFromConfig()`, `KernelAgentMemoryBackend`, `compileAgentRecallQuery()`, `runDreamCurator()` / `listDreamCandidates()` on `MemoryKernel`, `OpenClawWorkspaceProfile`, and `HermesWorkspaceProfile`. Advanced recall orchestration symbols such as `UniverseNavigator`, `PulseRetrievalEngine`, `TemporalBranchSearch`, `NarrativeRecallAssembler`, `explainRecallWithKernel`, and the `listCogmemMcpTools` / `callCogmemMcpTool` helpers are exported as beta APIs for agents that need direct inspection, custom routing, or MCP hosting.
-
-## Development
-
-```bash
-bun run --filter '@CognitiveOS/core' type
-bun run --filter '@CognitiveOS/core' build
-bun run --filter '@CognitiveOS/core' test
-```
-
-Release dry-run for the GitHub-only package:
-
-```bash
-cd packages/core
+bun run typecheck
+bun run build
+bun test
 npm pack --dry-run --json
 ```
 
-If the local npm cache is not writable, use a temporary cache instead:
+The package is release-asset distributed. Do not run `npm publish` for this release channel.
 
-```bash
-npm_config_cache="$(mktemp -d)" npm pack --dry-run --json
-```
+## Security and Privacy
 
-Do not run `npm publish`; this package is released through GitHub source distribution only.
+- Local-first by default.
+- No hosted storage required.
+- External embedding or memory-model providers must be explicit in TOML.
+- PII redaction can run before writing.
+- Optional AES-256-GCM encryption is available for sensitive fields.
+- Snapshots and exports can contain sensitive memory. Treat them as private artifacts.
+- Project boundaries are enforced in recall and explain paths.
+
+## Design Boundary
+
+cogmem can be used by OpenClaw, Hermes, LangGraph, custom agents, or a future agent OS. It must not depend on those hosts.
+
+The source of truth is the kernel store and chronological event ledger, not Markdown files. Markdown, Obsidian vaults, and wiki pages can be imported or exported as projections, but they are not the primary memory system.

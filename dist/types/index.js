@@ -1,5 +1,5 @@
 // ============================================
-// 核心类型定义 - Agent Brain
+// 核心类型定义 - cogmem
 // ============================================
 export var ContextFusionPath;
 (function (ContextFusionPath) {

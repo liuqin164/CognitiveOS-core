@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * cogmem-init — Interactive configuration wizard for @CognitiveOS/core
+ * cogmem-init — Interactive configuration wizard for cogmem
  *
  * Guides new users through:
  *  1. Database path

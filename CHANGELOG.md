@@ -1,13 +1,13 @@
 # Changelog
 
-## 2.0.0-rc.1
+## 2.0.0
 
 - Split the memory kernel into an independently installable core package for GitHub source distribution.
 - Added a stable Cogmem home directory with TOML configuration at `~/.cogmem/config.toml`.
 - Added `core.vector_dimension` for TOML-based embedding dimension configuration, including high-dimension warnings.
 - Removed legacy env-file/global-env configuration entrypoints; TOML is now the only supported configuration surface.
-- Added `cogmem-init` and `cogmem-doctor` for first-run setup and validation.
-- Added `cogmem-import-openclaw` and `cogmem-import-hermes` for command-triggered migration from existing agent workspaces.
+- Added `cogmem init` and `cogmem doctor` for first-run setup and validation.
+- Added `cogmem import-openclaw` and `cogmem import-hermes` for command-triggered migration from existing agent workspaces.
 - Added `KernelAgentMemoryBackend` for external agent integrations.
 - Routed `KernelAgentMemoryBackend.recall()` through universe navigation by default, with BrainRecall retained as fallback.
 - Exported the pulse/universe retrieval orchestrators for advanced agent integrations.
@@ -19,12 +19,12 @@
 - Added JSON/JSONL/CSV/TSV normalization source anchors and agent lifecycle facade methods for tool calls, tool observations, and task events.
 - Added `cogmem-normalize-transcript` for dry-run friendly transcript normalization into source-ref Markdown before import.
 - Added `memory_natural_emergence` benchmark baselines for critical recall, old-important recall, stale/superseded/suspect leakage, cross-project leakage, provenance completeness, context budget efficiency, pulse expansion, and inhibition correctness.
-- Added the unified `cogmem` CLI, `cogmem update`, `cogmem-connect openclaw --auto`, and `cogmem-doctor --fix --agent openclaw` so OpenClaw can install/repair an automatic recall and turn-recording wrapper without hand-editing runtime files.
+- Added the unified `cogmem` CLI, `cogmem update`, `cogmem connect openclaw --auto`, and `cogmem doctor --fix --agent openclaw` so OpenClaw can install/repair an automatic recall and turn-recording wrapper without hand-editing runtime files.
 - Added selective agent turn ingestion modes so OpenClaw/Hermes can preserve raw ledger evidence without embedding every conversation turn.
 - Added raw ledger FTS search through `MemoryKernel.searchRawEvents()` for source discovery and cold recall without requiring per-sentence vectors.
 - Added bounded agent-facing `raw_ledger_fallback` after governed compiled recall misses.
 - Added dream backlog status helpers for `raw_then_dream` coverage tracking.
-- Added `cogmem compact` and `cogmem-doctor --storage` for vector-only storage diagnostics and safe compaction.
+- Added `cogmem compact` and `cogmem doctor --storage` for vector-only storage diagnostics and safe compaction.
 - Changed the OpenClaw automatic memory wrapper to queue `agent_end` remember jobs and drain them in the background, avoiding synchronous response blocking from slow embeddings or SQLite writes.
 - Added best-effort OpenClaw lifecycle capture for tool calls, tool results, and task events when the host hook payload exposes them.
 - Added operational noise suppression so heartbeat polls, `HEARTBEAT_OK`, and setup reminders remain auditable evidence but do not enter active agent context by default.
@@ -37,7 +37,7 @@
 - Added dream curator schedule helpers for host-owned `manual`, `interval`, `daily`, and `continuous` workflows without starting a hidden core daemon.
 - Added `semanticCuePhrases`, `temporalHints`, and `sourceContext` to agent-facing recall so wording-drift questions such as `记忆黑盒` can find older `存档位置属于黑盒` raw evidence and agents can drill down to exact raw ledger context.
 - Added raw ledger anchors for imported OpenClaw/Hermes records so legacy memory files remain searchable through `cogmem memory search/show/recall` after curation while imported summaries stay `canAnswerExactQuote=false`.
-- Added `cogmem-import-openclaw --reindex-raw` / `cogmem-import-hermes --reindex-raw` to backfill raw ledger anchors for records imported by older versions without duplicating compiled memory or hot vectors.
+- Added `cogmem import-openclaw --reindex-raw` / `cogmem import-hermes --reindex-raw` to backfill raw ledger anchors for records imported by older versions without duplicating compiled memory or hot vectors.
 - Added `cogmem memory recall` as an agent-facing active memory search command using `KernelAgentMemoryBackend.recall()` with query plans and source context, so OpenClaw can query CogMem when automatic prompt injection is empty.
 - Expanded the Memory Curator / Dream Worker with semantic tag, indexing decision, semantic relation, and edge-adjustment candidates for host-owned curation loops without directly mutating verified memory.
 - Added `cogmem memory govern`, `cogmem memory dream --promote`, and `cogmem memory dream --watch` so hosts can run a supervised curation/governance loop without cron-only polling or unbounded candidate backlog.

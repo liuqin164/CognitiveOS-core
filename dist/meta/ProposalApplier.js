@@ -18,7 +18,7 @@ export class ProposalApplier {
             throw new Error('Must be approved before apply');
         }
         if (proposal.applyMode === 'config') {
-            const target = resolve(this.workspaceDir, 'agent-brain.config.json');
+            const target = resolve(this.workspaceDir, 'cogmem.config.json');
             const file = Bun.file(target);
             const previousValue = await file.exists()
                 ? JSON.parse(await file.text())
@@ -76,7 +76,7 @@ export class ProposalApplier {
             });
             return;
         }
-        const target = resolve(this.workspaceDir, 'agent-brain.config.json');
+        const target = resolve(this.workspaceDir, 'cogmem.config.json');
         await Bun.write(target, JSON.stringify(proposal.previousValue ?? {}, null, 2));
         this.ledger.rollback(proposalId);
         this.traceWriter.emit({

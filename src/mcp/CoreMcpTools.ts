@@ -46,7 +46,7 @@ export function listCogmemMcpTools(): CogmemMcpTool[] {
   return [
     {
       name: 'cogmem_remember_turn',
-      description: 'Write one user/agent turn into CognitiveOS-core memory.',
+      description: 'Write one user/agent turn into cogmem memory.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -69,7 +69,7 @@ export function listCogmemMcpTools(): CogmemMcpTool[] {
     },
     {
       name: 'cogmem_recall',
-      description: 'Recall governed prepared memory context from CognitiveOS-core using pulse, temporal, graph, and narrative retrieval. Suppressed evidence is omitted from active context; use cogmem_explain_recall to inspect filteredEvidence.',
+      description: 'Recall governed prepared memory context from cogmem using pulse, temporal, graph, and narrative retrieval. Suppressed evidence is omitted from active context; use cogmem_explain_recall to inspect filteredEvidence.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -91,7 +91,7 @@ export function listCogmemMcpTools(): CogmemMcpTool[] {
     },
     {
       name: 'cogmem_explain_recall',
-      description: 'Explain why CognitiveOS-core recalled specific memory context, including pulse trace, temporal traversal, runtime path, evidence, filteredEvidence, and governanceReason for suppressed candidates.',
+      description: 'Explain why cogmem recalled specific memory context, including pulse trace, temporal traversal, runtime path, evidence, filteredEvidence, and governanceReason for suppressed candidates.',
       inputSchema: {
         type: 'object',
         properties: {

@@ -36,7 +36,7 @@ describe('BenchmarkReport', () => {
     const report = new BenchmarkReport();
     const output = report.formatConsole([makeResult('context_pack_efficiency')]);
 
-    expect(output).toContain('agent-brain v0.8 Benchmark Report');
+    expect(output).toContain('cogmem v0.8 Benchmark Report');
   });
 
   test('formatConsole includes a separator line', () => {

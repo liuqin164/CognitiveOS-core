@@ -51,7 +51,7 @@ const DEFAULT_CONFIG: AgentBrainConfig = {
   },
   embedding: {
     model: 'all-MiniLM-L6-v2',
-    cacheDir: `${process.env.HOME || '/tmp'}/.cache/agent-brain/embeddings`,
+    cacheDir: `${process.env.HOME || '/tmp'}/.cache/cogmem/embeddings`,
     quantized: true,
     maxSequenceLength: 512
   },

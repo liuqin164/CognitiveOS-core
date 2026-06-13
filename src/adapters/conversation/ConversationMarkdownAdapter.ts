@@ -95,7 +95,7 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
         return;
       }
 
-      if (/^<!--\s*agent-brain-[a-z0-9_-]+:/i.test(line.trim()) || /^<!--\s*agent-brain-normalized\s*:/i.test(line.trim())) {
+      if (/^<!--\s*cogmem-[a-z0-9_-]+:/i.test(line.trim()) || /^<!--\s*cogmem-normalized\s*:/i.test(line.trim())) {
         return;
       }
 
@@ -233,7 +233,7 @@ export class ConversationMarkdownAdapter implements SourceAdapter {
 }
 
 function parseSourceRefMarker(line: string): ParsedSourceRefMarker | undefined {
-  const match = line.trim().match(/^<!--\s*agent-brain-source-ref:\s*([^]+?)\s*-->$/i);
+  const match = line.trim().match(/^<!--\s*(?:cogmem|agent-brain)-source-ref:\s*([^]+?)\s*-->$/i);
   if (!match?.[1]) return undefined;
   try {
     const parsed = JSON.parse(match[1].replace(/--&gt;/g, '-->')) as Record<string, unknown>;

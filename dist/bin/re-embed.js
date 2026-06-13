@@ -23,13 +23,13 @@ function parseArgs(argv) {
 const [command, ...rest] = process.argv.slice(2);
 const args = parseArgs(rest);
 if (command !== 'status') {
-    console.error('Usage: re-embed.ts status --db <agent-brain.db>');
+    console.error('Usage: re-embed.ts status --db <cogmem.db>');
     process.exit(1);
 }
 const configPath = typeof args.config === 'string' ? args.config : undefined;
 const resolution = configPath ? resolveCogmemConfigPath({ configPath }) : resolveCogmemConfigPath();
 const loaded = resolution.kind === 'toml' ? loadCogmemConfig({ configPath: resolution.path }) : undefined;
-const dbPath = typeof args.db === 'string' ? args.db : loaded?.options.dbPath ?? './agent-brain.db';
+const dbPath = typeof args.db === 'string' ? args.db : loaded?.options.dbPath ?? './cogmem.db';
 const db = new Database(dbPath);
 const store = new NeuronEmbeddingStore(db);
 const progress = store.getProgress();

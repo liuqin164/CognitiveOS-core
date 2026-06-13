@@ -1,6 +1,6 @@
 # Memory Model
 
-`@CognitiveOS/core` is an agent-native memory kernel. It stores agent experience, compiles durable memory at write time, recalls with structure-first pulse navigation, and keeps active context governed and bounded.
+`cogmem` is an agent-native memory kernel. It stores agent experience, compiles durable memory at write time, recalls with structure-first pulse navigation, and keeps active context governed and bounded.
 
 It is not a vector RAG store, a knowledge-base application, a wiki, an Obsidian replacement, or an agent runtime.
 

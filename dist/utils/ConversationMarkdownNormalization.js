@@ -59,17 +59,17 @@ export function writeNormalizedConversationMarkdown(outputPath, title, family, m
     const content = [
         `# ${title}`,
         '',
-        '<!-- agent-brain-normalized: true -->',
-        `<!-- agent-brain-normalization-contract: ${NORMALIZATION_CONTRACT_VERSION} -->`,
-        `<!-- agent-brain-normalized-source-family: ${NORMALIZED_SOURCE_FAMILY} -->`,
-        `<!-- agent-brain-original-input-family: ${family} -->`,
-        `<!-- agent-brain-normalized-from: ${family} -->`,
-        `<!-- agent-brain-normalized-title: ${escapeMarkerValue(title)} -->`,
-        `<!-- agent-brain-onboarding-path: ${DEFAULT_ONBOARDING_PATH} -->`,
+        '<!-- cogmem-normalized: true -->',
+        `<!-- cogmem-normalization-contract: ${NORMALIZATION_CONTRACT_VERSION} -->`,
+        `<!-- cogmem-normalized-source-family: ${NORMALIZED_SOURCE_FAMILY} -->`,
+        `<!-- cogmem-original-input-family: ${family} -->`,
+        `<!-- cogmem-normalized-from: ${family} -->`,
+        `<!-- cogmem-normalized-title: ${escapeMarkerValue(title)} -->`,
+        `<!-- cogmem-onboarding-path: ${DEFAULT_ONBOARDING_PATH} -->`,
         ...uniqueMarkers.map((marker) => `<!-- ${marker.key}: ${escapeMarkerValue(marker.value)} -->`),
         '',
         ...messages.flatMap((message) => [
-            message.source ? `<!-- agent-brain-source-ref: ${escapeMarkerValue(JSON.stringify(message.source))} -->` : undefined,
+            message.source ? `<!-- cogmem-source-ref: ${escapeMarkerValue(JSON.stringify(message.source))} -->` : undefined,
             `- [${message.timestamp}] ${message.role}: ${message.text}`,
         ].filter((line) => Boolean(line)))
     ].join('\n');
@@ -130,13 +130,13 @@ export function detectNormalizationFamily(markdown) {
     return parseNormalizationMetadata(markdown).originalInputFamily;
 }
 export function parseNormalizationMetadata(markdown) {
-    const legacyFamily = readMarker(markdown, 'agent-brain-normalized-from');
-    const originalInputFamily = readMarker(markdown, 'agent-brain-original-input-family') || legacyFamily;
-    const normalizedSourceFamily = readMarker(markdown, 'agent-brain-normalized-source-family');
-    const contractVersion = readMarker(markdown, 'agent-brain-normalization-contract');
-    const normalizedValue = readMarker(markdown, 'agent-brain-normalized');
-    const title = readMarker(markdown, 'agent-brain-normalized-title');
-    const onboardingPath = readMarker(markdown, 'agent-brain-onboarding-path');
+    const legacyFamily = readAnyMarker(markdown, 'cogmem-normalized-from', 'agent-brain-normalized-from');
+    const originalInputFamily = readAnyMarker(markdown, 'cogmem-original-input-family', 'agent-brain-original-input-family') || legacyFamily;
+    const normalizedSourceFamily = readAnyMarker(markdown, 'cogmem-normalized-source-family', 'agent-brain-normalized-source-family');
+    const contractVersion = readAnyMarker(markdown, 'cogmem-normalization-contract', 'agent-brain-normalization-contract');
+    const normalizedValue = readAnyMarker(markdown, 'cogmem-normalized', 'agent-brain-normalized');
+    const title = readAnyMarker(markdown, 'cogmem-normalized-title', 'agent-brain-normalized-title');
+    const onboardingPath = readAnyMarker(markdown, 'cogmem-onboarding-path', 'agent-brain-onboarding-path');
     const family = originalInputFamily;
     if (family !== 'jsonl_transcript_export'
         && family !== 'json_array_transcript_export'
@@ -203,17 +203,17 @@ export function normalizeAppPrivateMixedEventExport(inputPath) {
             const actor = asLooseRecord(event.actor);
             const kind = coerceText(event.kind) || coerceText(event.type) || coerceText(event.eventType);
             return [
-                { key: 'agent-brain-bridge-input-family', value: 'app_private_mixed_event_export' },
-                { key: 'agent-brain-bridge-event-selector', value: 'kind/type/eventType == message' },
-                { key: 'agent-brain-bridge-role-source', value: coerceText(actor.role) ? 'actor.role' : coerceText(actor.type) ? 'actor.type' : 'event.role' },
-                { key: 'agent-brain-bridge-text-source', value: pickFirstMarkerValue([
+                { key: 'cogmem-bridge-input-family', value: 'app_private_mixed_event_export' },
+                { key: 'cogmem-bridge-event-selector', value: 'kind/type/eventType == message' },
+                { key: 'cogmem-bridge-role-source', value: coerceText(actor.role) ? 'actor.role' : coerceText(actor.type) ? 'actor.type' : 'event.role' },
+                { key: 'cogmem-bridge-text-source', value: pickFirstMarkerValue([
                         [coerceText(asLooseRecord(event.body).text), 'body.text'],
                         [coerceText(asLooseRecord(event.body).content), 'body.content'],
                         [coerceText(asLooseRecord(event.body).message), 'body.message'],
                         [coerceText(event.text), 'event.text'],
                         [coerceText(event.message), 'event.message']
                     ]) || 'unknown' },
-                { key: 'agent-brain-bridge-timestamp-source', value: pickFirstMarkerValue([
+                { key: 'cogmem-bridge-timestamp-source', value: pickFirstMarkerValue([
                         [coerceText(event.occurred_at), 'occurred_at'],
                         [coerceText(event.timestamp), 'timestamp'],
                         [coerceText(event.created_at), 'created_at'],
@@ -267,22 +267,22 @@ export function normalizeJsonlMixedEventLogExport(inputPath) {
         emitMarkers: (event) => {
             const payload = asLooseRecord(event.payload);
             return [
-                { key: 'agent-brain-bridge-input-family', value: 'jsonl_mixed_event_log_export' },
-                { key: 'agent-brain-bridge-event-selector', value: 'type/kind in message-like events with text payload' },
-                { key: 'agent-brain-bridge-role-source', value: pickFirstMarkerValue([
+                { key: 'cogmem-bridge-input-family', value: 'jsonl_mixed_event_log_export' },
+                { key: 'cogmem-bridge-event-selector', value: 'type/kind in message-like events with text payload' },
+                { key: 'cogmem-bridge-role-source', value: pickFirstMarkerValue([
                         [coerceText(payload.role), 'payload.role'],
                         [coerceText(asLooseRecord(event.actor).role), 'actor.role'],
                         [coerceText(asLooseRecord(event.actor).type), 'actor.type'],
                         [coerceText(event.role), 'event.role']
                     ]) || 'user_fallback' },
-                { key: 'agent-brain-bridge-text-source', value: pickFirstMarkerValue([
+                { key: 'cogmem-bridge-text-source', value: pickFirstMarkerValue([
                         [coerceText(payload.text), 'payload.text'],
                         [coerceText(payload.content), 'payload.content'],
                         [coerceText(payload.message), 'payload.message'],
                         [coerceText(event.message), 'event.message'],
                         [coerceText(event.text), 'event.text']
                     ]) || 'unknown' },
-                { key: 'agent-brain-bridge-timestamp-source', value: pickFirstMarkerValue([
+                { key: 'cogmem-bridge-timestamp-source', value: pickFirstMarkerValue([
                         [coerceText(payload.timestamp), 'payload.timestamp'],
                         [coerceText(event.timestamp), 'event.timestamp'],
                         [coerceText(event.created_at), 'event.created_at'],
@@ -376,6 +376,14 @@ function assertNormalizedMessages(messages, family) {
             throw new Error(`Normalization failed for ${family}: message ${index} has an invalid timestamp.`);
         }
     }
+}
+function readAnyMarker(markdown, ...markers) {
+    for (const marker of markers) {
+        const value = readMarker(markdown, marker);
+        if (value)
+            return value;
+    }
+    return undefined;
 }
 function readMarker(markdown, marker) {
     const pattern = new RegExp(`<!--\\s*${marker}:\\s*([^]+?)\\s*-->`, 'i');

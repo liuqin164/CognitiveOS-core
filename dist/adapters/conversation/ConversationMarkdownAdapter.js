@@ -47,7 +47,7 @@ export class ConversationMarkdownAdapter {
                 pendingSourceRef = sourceRefMarker;
                 return;
             }
-            if (/^<!--\s*agent-brain-[a-z0-9_-]+:/i.test(line.trim()) || /^<!--\s*agent-brain-normalized\s*:/i.test(line.trim())) {
+            if (/^<!--\s*cogmem-[a-z0-9_-]+:/i.test(line.trim()) || /^<!--\s*cogmem-normalized\s*:/i.test(line.trim())) {
                 return;
             }
             const dateHeading = parseLooseDateHeading(line);
@@ -170,7 +170,7 @@ export class ConversationMarkdownAdapter {
     }
 }
 function parseSourceRefMarker(line) {
-    const match = line.trim().match(/^<!--\s*agent-brain-source-ref:\s*([^]+?)\s*-->$/i);
+    const match = line.trim().match(/^<!--\s*(?:cogmem|agent-brain)-source-ref:\s*([^]+?)\s*-->$/i);
     if (!match?.[1])
         return undefined;
     try {

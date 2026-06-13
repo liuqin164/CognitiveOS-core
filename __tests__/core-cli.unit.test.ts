@@ -171,6 +171,44 @@ test('init dry-run can target Hermes agent workspaces', async () => {
   expect(existsSync(join(homePath, 'config.toml'))).toBe(false);
 });
 
+test('init auto-detects Hermes home in non-interactive setup', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-init-auto-hermes-'));
+  const homePath = join(dir, '.cogmem');
+  const hermesHome = join(dir, '.hermes');
+  mkdirSync(hermesHome, { recursive: true });
+  writeFileSync(join(hermesHome, 'config.yaml'), 'mcp_servers: {}\n');
+
+  const proc = Bun.spawn({
+    cmd: [
+      'bun',
+      initBin,
+      '--yes',
+      '--dry-run',
+      '--agent',
+      'auto',
+      '--home',
+      homePath,
+    ],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: {
+      ...process.env,
+      HOME: dir,
+      NO_COLOR: '1',
+    },
+  });
+  const output = await new Response(proc.stdout).text();
+  const errorOutput = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  expect(errorOutput).toBe('');
+  expect(exitCode).toBe(0);
+  expect(output).toContain('[integrations.hermes]');
+  expect(output).toContain('enabled = true');
+  expect(existsSync(join(homePath, 'config.toml'))).toBe(false);
+});
+
 test('init non-interactive output shows current SDK quickstart calls', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-init-snippet-'));
   const homePath = join(dir, '.cogmem');
@@ -275,7 +313,7 @@ test('init expands tilde in --home paths', async () => {
 
 test('doctor rejects legacy env-path configuration', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-doctor-legacy-'));
-  const envPath = join(dir, '.agent-brain.env');
+  const envPath = join(dir, '.cogmem.env');
   writeFileSync(envPath, 'COGMEM_DB=brain.db\n');
 
   const proc = Bun.spawn({
@@ -321,7 +359,7 @@ test('doctor prints a high vector dimension warning for structured config', asyn
 
 test('init rejects legacy env generation flags', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-init-legacy-'));
-  const envPath = join(dir, '.agent-brain.env');
+  const envPath = join(dir, '.cogmem.env');
 
   const proc = Bun.spawn({
     cmd: [

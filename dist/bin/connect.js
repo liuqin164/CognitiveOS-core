@@ -29,6 +29,7 @@ function readArgs(argv) {
         workspaceRoot: resolve(stringValue(values.workspace) || '.'),
         configPath: stringValue(values.config),
         openclawConfigPath: stringValue(values['openclaw-config']),
+        hermesConfigPath: stringValue(values['hermes-config']),
         pluginDir: stringValue(values['plugin-dir']),
         bunPath: stringValue(values.bun),
         projectId: stringValue(values.project),
@@ -69,20 +70,22 @@ function nextCommands(agent) {
     return [
         './node_modules/.bin/cogmem-init --agent hermes',
         './node_modules/.bin/cogmem-doctor',
+        './node_modules/.bin/cogmem-connect hermes --workspace . --auto --force',
         './node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --dry-run',
         './node_modules/.bin/cogmem-import-hermes --workspace . --project hermes',
     ];
 }
 function usage() {
     return [
-        'Usage: cogmem-connect <openclaw|hermes> [--workspace <dir>] [--output <SKILL.md>] [--auto] [--config <config.toml>] [--openclaw-config <openclaw.json>] [--dry-run] [--force] [--json]',
+        'Usage: cogmem-connect <openclaw|hermes> [--workspace <dir>] [--output <SKILL.md>] [--auto] [--config <config.toml>] [--openclaw-config <openclaw.json>] [--hermes-config <config.yaml>] [--dry-run] [--force] [--json]',
         '',
-        'Installs the agent-facing CognitiveOS-core memory skill file into:',
+        'Installs the agent-facing cogmem memory skill file into:',
         '  OpenClaw: <workspace>/skills/cogmem-memory/SKILL.md',
         '  Hermes:   ~/.hermes/skills/cogmem-memory/SKILL.md',
         '',
         'By default this command installs only the agent-facing skill file.',
         'For OpenClaw, pass --auto to install the local automatic recall/remember plugin wrapper and patch OpenClaw plugin config.',
+        'For Hermes, pass --auto to patch ~/.hermes/config.yaml with a cogmem MCP server entry.',
     ].join('\n');
 }
 function hostConfigSnippet(agent, workspaceRoot, auto) {
@@ -91,7 +94,7 @@ function hostConfigSnippet(agent, workspaceRoot, auto) {
             return [
                 '// cogmem-connect openclaw --auto installs a local OpenClaw plugin wrapper.',
                 '// The wrapper registers before_prompt_build for governed recall and agent_end for turn recording.',
-                '// It calls KernelAgentMemoryBackend through @CognitiveOS/core public API via a Bun bridge.',
+                '// It calls KernelAgentMemoryBackend through cogmem public API via a Bun bridge.',
                 '// Restart the OpenClaw Gateway after changing plugin code, hook policy, or plugins.load.paths.',
             ].join('\n');
         }
@@ -99,11 +102,11 @@ function hostConfigSnippet(agent, workspaceRoot, auto) {
             '// cogmem-connect does not modify OpenClaw host config.',
             '// It installs a workspace skill at <workspace>/skills/cogmem-memory/SKILL.md.',
             '// Current OpenClaw memory config is owned by OpenClaw, for example memory.backend = "builtin" | "qmd".',
-            '// Do not write unknown OpenClaw config fields for CognitiveOS-core.',
+            '// Do not write unknown OpenClaw config fields for cogmem.',
             '// Add host config only after installing a real OpenClaw plugin wrapper with a valid manifest/schema.',
         ].join('\n');
     }
-    const mcpBin = join(workspaceRoot, 'node_modules', '.bin', 'cogmem-mcp');
+    const mcpBin = resolveCogmemMcpCommand(workspaceRoot);
     return [
         'mcp_servers:',
         '  cogmem:',
@@ -117,6 +120,22 @@ function hostConfigSnippet(agent, workspaceRoot, auto) {
         '        - cogmem_explain_recall',
     ].join('\n');
 }
+function resolveCogmemMcpCommand(workspaceRoot) {
+    if (process.env.COGMEM_MCP_BIN)
+        return process.env.COGMEM_MCP_BIN;
+    const workspaceBin = join(workspaceRoot, 'node_modules', '.bin', 'cogmem-mcp');
+    if (existsSync(workspaceBin))
+        return workspaceBin;
+    const pathValue = process.env.PATH || '';
+    for (const segment of pathValue.split(':')) {
+        if (!segment)
+            continue;
+        const candidate = join(segment, 'cogmem-mcp');
+        if (existsSync(candidate))
+            return candidate;
+    }
+    return 'cogmem-mcp';
+}
 function installSkill(args) {
     if (!args.agent)
         throw new Error(usage());
@@ -128,6 +147,7 @@ function installSkill(args) {
     const skillPath = resolve(args.outputPath || defaultSkillPath(args.agent, args.workspaceRoot));
     const alreadyCurrent = existsSync(skillPath) && readFileSync(skillPath, 'utf8') === template;
     let autoMemory;
+    let hermesMcp;
     if (!args.dryRun && !alreadyCurrent) {
         if (existsSync(skillPath) && !args.force) {
             throw new Error(`Skill already exists at ${skillPath}. Re-run with --force to overwrite.`);
@@ -148,8 +168,13 @@ function installSkill(args) {
             force: args.force,
         });
     }
-    else if (args.auto && args.agent !== 'openclaw') {
-        throw new Error('--auto is currently supported only for OpenClaw.');
+    else if (args.agent === 'hermes' && args.auto) {
+        hermesMcp = installHermesMcpConfig({
+            workspaceRoot: args.workspaceRoot,
+            configPath: args.hermesConfigPath,
+            dryRun: args.dryRun,
+            force: args.force,
+        });
     }
     return {
         agent: args.agent,
@@ -162,7 +187,67 @@ function installSkill(args) {
         nextCommands: nextCommands(args.agent),
         hostConfigSnippet: hostConfigSnippet(args.agent, args.workspaceRoot, args.auto),
         autoMemory,
+        hermesMcp,
     };
+}
+function defaultHermesConfigPath(env = process.env) {
+    return join(env.HOME || homedir(), '.hermes', 'config.yaml');
+}
+function installHermesMcpConfig(input) {
+    const configPath = resolve(input.configPath || defaultHermesConfigPath());
+    const serverCommand = resolveCogmemMcpCommand(resolve(input.workspaceRoot));
+    const original = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+    const patched = patchHermesMcpConfig(original, serverCommand);
+    const changed = patched !== original;
+    let backupPath;
+    if (!input.dryRun && (changed || input.force)) {
+        mkdirSync(dirname(configPath), { recursive: true });
+        if (existsSync(configPath)) {
+            backupPath = `${configPath}.cogmem.bak-${Date.now()}`;
+            writeFileSync(backupPath, original, 'utf8');
+        }
+        writeFileSync(configPath, patched, 'utf8');
+    }
+    return {
+        enabled: true,
+        configPath,
+        serverCommand,
+        dryRun: input.dryRun,
+        configUpdated: changed || input.force,
+        backupPath,
+    };
+}
+function patchHermesMcpConfig(original, serverCommand) {
+    if (/^\s+cogmem\s*:/m.test(original) && original.includes('cogmem-mcp')) {
+        return original.endsWith('\n') ? original : `${original}\n`;
+    }
+    const lines = original.replace(/\r\n/g, '\n').split('\n');
+    const serverBlock = [
+        '  cogmem:',
+        `    command: "${serverCommand}"`,
+        '    args: []',
+        '    enabled: true',
+        '    tools:',
+        '      include:',
+        '        - cogmem_remember_turn',
+        '        - cogmem_recall',
+        '        - cogmem_explain_recall',
+    ];
+    const mcpIndex = lines.findIndex((line) => /^mcp_servers\s*:\s*(?:\{\})?\s*$/.test(line.trim()));
+    if (mcpIndex === -1) {
+        const prefix = original.trimEnd();
+        return `${prefix}${prefix ? '\n\n' : ''}mcp_servers:\n${serverBlock.join('\n')}\n`;
+    }
+    lines[mcpIndex] = 'mcp_servers:';
+    let insertAt = mcpIndex + 1;
+    while (insertAt < lines.length) {
+        const line = lines[insertAt];
+        if (line.trim() && !line.startsWith(' ') && !line.startsWith('\t') && !line.trim().startsWith('#'))
+            break;
+        insertAt += 1;
+    }
+    lines.splice(insertAt, 0, ...serverBlock);
+    return `${lines.join('\n').replace(/\n+$/u, '')}\n`;
 }
 function printHuman(result) {
     console.log(`cogmem ${result.agent} skill ${result.dryRun ? 'dry-run' : result.installed ? 'installed' : 'already current'}`);
@@ -179,6 +264,15 @@ function printHuman(result) {
         console.log(`  hooks: ${result.autoMemory.hookNames.join(', ')}`);
         if (result.autoMemory.backupPath)
             console.log(`  backup: ${result.autoMemory.backupPath}`);
+    }
+    if (result.hermesMcp) {
+        console.log('');
+        console.log('Hermes MCP integration:');
+        console.log(`  config: ${result.hermesMcp.configPath}`);
+        console.log(`  command: ${result.hermesMcp.serverCommand}`);
+        if (result.hermesMcp.backupPath)
+            console.log(`  backup: ${result.hermesMcp.backupPath}`);
+        console.log('  reload: /reload-mcp');
     }
     console.log('');
     console.log('Next commands:');

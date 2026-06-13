@@ -1,0 +1,17 @@
+.DS_Store
+node_modules/
+
+# Local memory databases and SQLite sidecars
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# TypeScript incremental state
+dist/.tsbuildinfo
+
+# Local runtime state
+.cogmem/
+*.log

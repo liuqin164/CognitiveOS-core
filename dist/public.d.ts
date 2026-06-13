@@ -1,5 +1,5 @@
 /**
- * @CognitiveOS/core — public API surface for v2.0+
+ * cogmem — public API surface for v2.0+
  *
  * Stability tiers (see SEMVER.md for full policy):
  *   @stable      — covered by SemVer; no breaking changes within a major
@@ -41,7 +41,7 @@ export type { BrainRecallResult } from './types/BrainRecallResult.js';
 export type { MemoryEvent, MemoryEventContext, MemoryEventCausalityType, MemoryRawEventType, MemoryEventRole, MemorySourceRef, Neuron, NeuronType, OrderingConfidence, } from './types/index.js';
 export type { ImportanceLevel } from './core/ImportanceLevels.js';
 /**
- * Extension point interfaces for CognitiveOS and third-party adapters.
+ * Extension point interfaces for host runtimes and third-party adapters.
  * @stable @since 1.9.6
  */
 export type { AutonomyContext, IAuditLedger, ILLMClarifier, IProceduralBridge, ISkillDiscovery, ISkillMemoryStore, SkillCandidateLike, } from './types/ExtensionPoints.js';
@@ -73,7 +73,7 @@ export type { ReEmbeddingStatus } from './embedding/ReEmbeddingStatus.js';
 /**
  * Dream curator scheduling helpers. They describe host-owned schedules; core
  * never starts a hidden daemon.
- * @beta @since 2.0.0-rc.1
+ * @beta @since 2.0.0
  */
 export { describeDreamCuratorWorkflow, nextDreamCuratorRunAt, } from './engine/DreamCuratorSchedule.js';
 export type { DreamCuratorScheduleConfig, DreamCuratorScheduleMode, DreamCuratorWorkflowDescription, } from './engine/DreamCuratorSchedule.js';

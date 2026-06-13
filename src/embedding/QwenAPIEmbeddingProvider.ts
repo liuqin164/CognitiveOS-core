@@ -1,9 +1,8 @@
 import { EmbeddingUnavailableError, embedOne, type EmbeddingProvider } from './EmbeddingProvider.js';
 
 /**
- * @deprecated Since v1.13, use `QwenAPIEmbeddingProvider` from
- * `@CognitiveOS/embeddings-qwen`. The core export remains for v1.x
- * compatibility only.
+ * @deprecated Use an OpenAI-compatible embedding endpoint through TOML config.
+ * This core export remains only for source compatibility with older builds.
  */
 export interface QwenAPIEmbeddingConfig {
   apiKey: string;
@@ -13,8 +12,7 @@ export interface QwenAPIEmbeddingConfig {
 }
 
 /**
- * @deprecated Since v1.13, use `QwenAPIEmbeddingProvider` from
- * `@CognitiveOS/embeddings-qwen`.
+ * @deprecated Use an OpenAI-compatible embedding endpoint through TOML config.
  */
 export class QwenAPIEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = 1024;

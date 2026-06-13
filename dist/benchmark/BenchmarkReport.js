@@ -4,7 +4,7 @@ export class BenchmarkReport {
     }
     formatConsoleFromPersisted(report) {
         const lines = [
-            'agent-brain v0.8 Benchmark Report',
+            'cogmem v0.8 Benchmark Report',
             '=================================='
         ];
         for (const result of report.groups) {

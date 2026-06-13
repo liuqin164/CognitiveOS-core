@@ -53,7 +53,7 @@ else {
     ok(`cogmem home ${loaded.homeDir}`);
     const kernel = createMemoryKernelFromConfig({ configPath: resolution.path });
     const health = kernel.getHealthStatus();
-    if (health.package !== '@CognitiveOS/core')
+    if (health.package !== 'cogmem')
         fail('unexpected package identity');
     ok(`kernel ready at ${health.dbPath}`);
     kernel.close();

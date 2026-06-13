@@ -1,9 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { resolveCogmemConfigPath } from '../../config/CogmemConfig.js';
 const PLUGIN_ID = 'cogmem-auto-memory';
 const PLUGIN_VERSION = '0.1.0';
+function defaultPublicEntrypoint() {
+    return join(resolve(dirname(fileURLToPath(import.meta.url)), '../..'), 'public.js');
+}
 export function defaultOpenClawConfigPath(workspaceRoot, env = process.env) {
     const resolvedWorkspace = resolve(workspaceRoot);
     const parentConfig = join(dirname(resolvedWorkspace), 'openclaw.json');
@@ -115,6 +119,7 @@ function buildPatchedOpenClawConfig(input) {
             configPath: input.configPath,
             cwd: input.workspaceRoot,
             bunPath: input.bunPath,
+            publicEntrypoint: defaultPublicEntrypoint(),
             agentId: input.agentId,
             projectId: input.projectId,
             autoRecall: true,
@@ -160,6 +165,7 @@ function buildPluginFiles() {
                     configPath: { type: 'string' },
                     cwd: { type: 'string' },
                     bunPath: { type: 'string' },
+                    publicEntrypoint: { type: 'string' },
                     agentId: { type: 'string' },
                     projectId: { type: 'string' },
                     autoRecall: { type: 'boolean' },
@@ -202,6 +208,7 @@ const DEFAULTS = {
   configPath: '',
   cwd: process.cwd(),
   bunPath: 'bun',
+  publicEntrypoint: '',
   agentId: 'openclaw',
   projectId: 'openclaw',
   autoRecall: true,
@@ -600,7 +607,7 @@ function pluginBridgeMjs() {
     return String.raw `#!/usr/bin/env bun
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { createMemoryKernelFromConfig, KernelAgentMemoryBackend } from '@CognitiveOS/core';
+import { pathToFileURL } from 'node:url';
 
 const command = process.argv[2];
 const input = JSON.parse(readFileSync(0, 'utf8') || '{}');
@@ -609,6 +616,7 @@ if (!config.configPath) {
   throw new Error('missing cogmem configPath');
 }
 
+const { createMemoryKernelFromConfig, KernelAgentMemoryBackend } = await loadCogmemApi(config);
 const kernel = createMemoryKernelFromConfig({ configPath: config.configPath });
 const memory = new KernelAgentMemoryBackend(kernel);
 
@@ -648,6 +656,23 @@ try {
   }
 } finally {
   kernel.close();
+}
+
+async function loadCogmemApi(bridgeConfig) {
+  const candidates = [];
+  if (bridgeConfig.publicEntrypoint) {
+    candidates.push(pathToFileURL(bridgeConfig.publicEntrypoint).href);
+  }
+  candidates.push('cogmem');
+  const errors = [];
+  for (const candidate of candidates) {
+    try {
+      return await import(candidate);
+    } catch (error) {
+      errors.push(candidate + ': ' + (error && error.message || String(error)));
+    }
+  }
+  throw new Error('Unable to load cogmem API. Tried ' + errors.join('; '));
 }
 
 async function rememberPayload(payload, bridgeConfig) {

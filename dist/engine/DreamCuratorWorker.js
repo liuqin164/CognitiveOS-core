@@ -527,7 +527,7 @@ function preferenceCategory(text) {
 }
 function preferenceTags(text) {
     const tags = ['source:explicit_user_statement'];
-    if (/记忆内核|CogMem|CognitiveOS|OpenClaw|Hermes|Obsidian|wiki/iu.test(text))
+    if (/记忆内核|CogMem|cogmem|OpenClaw|Hermes|Obsidian|wiki/iu.test(text))
         tags.push('scope:project');
     if (/本地优先|local-first/iu.test(text))
         tags.push('policy:local_first');
@@ -539,7 +539,7 @@ function preferenceTags(text) {
 }
 function extractTopics(text) {
     const topics = [];
-    for (const topic of ['CogMem', 'CognitiveOS', 'OpenClaw', 'Hermes', 'Obsidian', 'wiki', '记忆内核', '记忆黑盒', '上下文噪声', 'source locator', 'raw ledger', 'local-first']) {
+    for (const topic of ['CogMem', 'cogmem', 'OpenClaw', 'Hermes', 'Obsidian', 'wiki', '记忆内核', '记忆黑盒', '上下文噪声', 'source locator', 'raw ledger', 'local-first']) {
         if (text.toLowerCase().includes(topic.toLowerCase()))
             topics.push(topic);
     }

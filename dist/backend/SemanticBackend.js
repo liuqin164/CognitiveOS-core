@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-const DEFAULT_CACHE_ROOT = resolve(`${process.env.HOME || '/tmp'}/.cache/agent-brain`);
+const DEFAULT_CACHE_ROOT = resolve(`${process.env.HOME || '/tmp'}/.cache/cogmem`);
 const DEFAULT_READY_FILE = join(DEFAULT_CACHE_ROOT, 'semantic-backends', 'gemma4-e4b-ready.json');
 export function resolveSemanticBackendConfig() {
     return {

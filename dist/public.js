@@ -1,5 +1,5 @@
 /**
- * @CognitiveOS/core — public API surface for v2.0+
+ * cogmem — public API surface for v2.0+
  *
  * Stability tiers (see SEMVER.md for full policy):
  *   @stable      — covered by SemVer; no breaking changes within a major
@@ -46,7 +46,7 @@ export { EmbeddingUnavailableError, embedOne } from './embedding/EmbeddingProvid
 /**
  * Dream curator scheduling helpers. They describe host-owned schedules; core
  * never starts a hidden daemon.
- * @beta @since 2.0.0-rc.1
+ * @beta @since 2.0.0
  */
 export { describeDreamCuratorWorkflow, nextDreamCuratorRunAt, } from './engine/DreamCuratorSchedule.js';
 export { ReEmbeddingPipeline } from './embedding/ReEmbeddingPipeline.js';

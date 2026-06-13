@@ -1,61 +1,52 @@
-# @CognitiveOS/core 2.0.0-rc.1 Release Checklist
+# cogmem 2.0.0 Release Checklist
 
-This release candidate is GitHub-only. The package is not published to npm.
+This release is distributed through GitHub Releases. Do not run npm publish.
 
-## Scope
+## Required Metadata
 
-- Release target: `@CognitiveOS/core` version `2.0.0-rc.1`.
-- Distribution: GitHub source/tag install, for example `bun add github:<owner>/CognitiveOS-core#v2.0.0-rc.1`.
-- Do not run npm publish.
-- Treat `npm pack --dry-run --json` as a local artifact integrity check only.
+- `package.json` name is `cogmem`.
+- `package.json` version is `2.0.0`.
+- Public export `.` points to `dist/public.js` and `dist/public.d.ts`.
+- Internal subpath `./internal` exists only as an explicit advanced subpath.
+- `install.sh` is tracked and uses the latest GitHub release asset.
+- Local databases, SQLite sidecars, `.DS_Store`, and `dist/.tsbuildinfo` are not tracked.
 
-## Metadata
+## Required Binaries
 
-- `package.json` version is `2.0.0-rc.1`.
-- Public package export `.` points to `dist/public.js` and `dist/public.d.ts`.
-- Internal subpath export `./internal` points to `dist/internal.js` and `dist/internal.d.ts`.
-- Package `bin` entries exist for all documented CLI commands:
-  - `cogmem-init`
-  - `cogmem-doctor`
-  - `cogmem-connect`
-  - `cogmem-update`
-  - `cogmem-compact`
-  - `cogmem-memory` with status/list/search/show/dream/candidates subcommands
-  - `cogmem-explain-recall`
-  - `cogmem-mcp`
-  - `cogmem-import-openclaw`
-  - `cogmem-import-hermes`
-  - `cogmem-snapshot`
-  - `cogmem-re-embed`
-  - `cogmem-migrate-vectors`
+- `cogmem`
+- `cogmem init`
+- `cogmem doctor`
+- `cogmem connect`
+- `cogmem update`
+- `cogmem-compact`
+- `cogmem memory`
+- `cogmem explain-recall`
+- `cogmem-mcp`
+- `cogmem import-openclaw`
+- `cogmem import-hermes`
+- `cogmem normalize-transcript`
+- `cogmem snapshot`
+- `cogmem re-embed`
+- `cogmem migrate-vectors`
 
-## Documentation
+## Required Documentation
 
-- README explains GitHub-only installation and says the package is not published to npm.
-- SECURITY documents local-first storage, explicit external embedding providers, snapshots as sensitive, and governed recall.
-- CONTRIBUTING uses `bun run --filter '@CognitiveOS/core' type`, `build`, `test`, and `npm pack --dry-run --json` as the core gate.
-- CHANGELOG has a `2.0.0-rc.1` section covering the GitHub-only package split and release hardening.
+- README explains the vision, architecture, limits, and one-line install command.
+- README says this is a single-agent memory kernel, not an agent team shared brain.
+- README distinguishes embedding models from Dream Curator memory-model LLMs.
+- OpenClaw skill explains self-install, import, active recall, `--auto`, and `doctor --fix`.
+- Hermes skill explains self-install, MCP wiring, `connect hermes --auto`, and `/reload-mcp`.
+- SECURITY documents local-first storage, explicit external providers, snapshots as sensitive, and governed recall.
 
-## Verification Commands
+## Verification
 
 Run from the repository root:
 
 ```bash
-bun run --filter '@CognitiveOS/core' type
-bun run --filter '@CognitiveOS/core' build
-bun run --filter '@CognitiveOS/core' test
-```
-
-Run from `packages/core`:
-
-```bash
+bun run typecheck
+bun run build
+bun test
 npm pack --dry-run --json
 ```
 
-If the local npm cache is not writable, run the pack dry-run with a temporary cache:
-
-```bash
-npm_config_cache="$(mktemp -d)" npm pack --dry-run --json
-```
-
-The dry-run output must include built public API files, internal subpath files, CLI files under `dist/bin`, examples, and release docs. It must not create or publish a real package release.
+The pack dry-run must include built public API files, CLI files, examples, docs, and `install.sh`. It must not include local databases or machine-specific files.

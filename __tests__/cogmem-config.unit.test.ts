@@ -123,7 +123,7 @@ test('resolveCogmemConfigPath prefers TOML configs and ignores legacy env files'
   mkdirSync(join(home, '.cogmem'), { recursive: true });
   writeFileSync(join(nested, '.cogmem', 'config.toml'), '[core]\ndb_path = "project.db"\n');
   writeFileSync(join(home, '.cogmem', 'config.toml'), '[core]\ndb_path = "global.db"\n');
-  writeFileSync(join(root, '.agent-brain.env'), 'COGMEM_DB=legacy.db\n');
+  writeFileSync(join(root, '.cogmem.env'), 'COGMEM_DB=legacy.db\n');
 
   expect(resolveCogmemConfigPath({ cwd: nested, env: { HOME: home } })).toEqual({
     kind: 'toml',

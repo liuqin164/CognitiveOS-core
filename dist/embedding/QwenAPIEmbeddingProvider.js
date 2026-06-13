@@ -1,7 +1,6 @@
 import { EmbeddingUnavailableError, embedOne } from './EmbeddingProvider.js';
 /**
- * @deprecated Since v1.13, use `QwenAPIEmbeddingProvider` from
- * `@CognitiveOS/embeddings-qwen`.
+ * @deprecated Use an OpenAI-compatible embedding endpoint through TOML config.
  */
 export class QwenAPIEmbeddingProvider {
     config;

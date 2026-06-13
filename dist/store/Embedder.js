@@ -18,7 +18,7 @@ export class Embedder {
     constructor(config = {}) {
         this.config = {
             model: config.model || 'all-MiniLM-L6-v2',
-            cacheDir: config.cacheDir || `${process.env.HOME || '/tmp'}/.cache/agent-brain/embeddings`,
+            cacheDir: config.cacheDir || `${process.env.HOME || '/tmp'}/.cache/cogmem/embeddings`,
             quantized: config.quantized ?? true,
             maxSequenceLength: config.maxSequenceLength || 512
         };

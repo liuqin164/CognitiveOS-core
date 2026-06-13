@@ -3,7 +3,7 @@ const PROTECTED_PHRASES = [
     'Memory Context',
     'OpenClaw',
     'Hermes',
-    'CognitiveOS',
+    'cogmem',
     'Obsidian',
     '记忆内核',
     '记忆黑盒',
@@ -103,6 +103,9 @@ export function extractRecallKeywords(text) {
             }
             else if (phrase === '记忆内核') {
                 found.push('记忆');
+            }
+            else if (phrase === 'cogmem' && lower.includes('cogmem memory context')) {
+                continue;
             }
             else if (phrase === 'Memory Context' && lower.includes('cogmem memory context')) {
                 continue;

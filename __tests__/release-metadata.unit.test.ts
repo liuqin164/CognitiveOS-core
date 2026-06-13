@@ -22,21 +22,60 @@ function packageJson(): {
 }
 
 describe('core release metadata', () => {
-  test('2.0.0-rc.1 is GitHub-installable and not an npm publish release', () => {
+  test('2.0.0 is released as cogmem through GitHub release assets', () => {
     const manifest = packageJson();
     const readme = readText(join(coreRoot, 'README.md'));
     const contributing = readText(join(coreRoot, 'CONTRIBUTING.md'));
     const changelog = readText(join(coreRoot, 'CHANGELOG.md'));
     const checklist = readText(join(coreRoot, 'RELEASE_CHECKLIST.md'));
 
-    expect(manifest.version).toBe('2.0.0-rc.1');
-    expect(readme).toContain('GitHub');
-    expect(readme).toContain('not published to npm');
+    expect(manifest.name).toBe('cogmem');
+    expect(manifest.version).toBe('2.0.0');
+    expect(manifest.description).toContain('agent-native memory kernel');
+    expect(readme).toContain('curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash');
+    expect(readme).toContain('GitHub Releases');
+    expect(readme).not.toContain('CognitiveOS-core');
+    expect(readme).not.toContain('@CognitiveOS/core');
     expect(contributing).toContain('npm pack --dry-run --json');
     expect(contributing).not.toContain('npm publish');
-    expect(changelog).toContain('GitHub');
-    expect(checklist).toContain('2.0.0-rc.1');
+    expect(changelog).toContain('2.0.0');
+    expect(checklist).toContain('2.0.0');
     expect(checklist).toContain('Do not run npm publish');
+  });
+
+  test('one-line installer is tracked and uses GitHub latest release assets', () => {
+    const installer = readText(join(coreRoot, 'install.sh'));
+
+    expect(installer).toContain('liuqin164/cogmem');
+    expect(installer).toContain('/releases/latest');
+    expect(installer).toContain('bun add');
+    expect(installer).toContain('"$BIN_DIR/cogmem" init');
+    expect(installer).not.toContain('CognitiveOS-core');
+    expect(installer).not.toContain('@CognitiveOS/core');
+  });
+
+  test('local databases and desktop metadata are not tracked as release files', async () => {
+    const proc = Bun.spawn({
+      cmd: ['git', 'ls-files'],
+      cwd: coreRoot,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const output = await new Response(proc.stdout).text();
+    const errorOutput = await new Response(proc.stderr).text();
+    expect(errorOutput).toBe('');
+    expect(await proc.exited).toBe(0);
+
+    const files = output.trim().split(/\n+/).filter(Boolean);
+    expect(files).not.toContain('.DS_Store');
+    expect(files).not.toContain('cogmem.db');
+    expect(files).not.toContain('brain.db');
+    expect(files).not.toContain('brain.db-shm');
+    expect(files).not.toContain('brain.db-wal');
+    expect(files).not.toContain('cogmem.db');
+    expect(files).not.toContain('cogmem.db-shm');
+    expect(files).not.toContain('cogmem.db-wal');
+    expect(files).not.toContain('dist/.tsbuildinfo');
   });
 
   test('package exposes stable public exports and keeps internal on explicit subpath only', () => {
@@ -93,6 +132,8 @@ describe('core release metadata', () => {
     const manifest = packageJson();
 
     expect(manifest.files).toContain('README.md');
+    expect(manifest.files).toContain('examples/**/*.md');
+    expect(manifest.files).toContain('install.sh');
     expect(manifest.files).toContain('MEMORY_MODEL.md');
     expect(manifest.files).toContain('RECALL_EXPLAINABILITY.md');
     expect(manifest.files).toContain('BENCHMARKS.md');

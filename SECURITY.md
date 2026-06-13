@@ -1,6 +1,6 @@
 # Security
 
-`@CognitiveOS/core` is local-first by default. Memory data is stored in the configured SQLite database path.
+`cogmem` is local-first by default. Memory data is stored in the configured SQLite database path.
 
 ## Data Handling
 

@@ -1,6 +1,6 @@
 # Hermes Backend
 
-Use core as a Hermes-compatible durable memory backend through a narrow filesystem contract.
+Use cogmem as a Hermes-compatible durable memory backend through MCP and imports.
 
 ## Default Contract
 
@@ -10,12 +10,14 @@ Use core as a Hermes-compatible durable memory backend through a narrow filesyst
 ## Install
 
 ```bash
-export COGMEM_CORE_REPO="github:<owner>/CognitiveOS-core#main"
-bun add "$COGMEM_CORE_REPO"
-./node_modules/.bin/cogmem-connect hermes --workspace .
-./node_modules/.bin/cogmem-init --agent hermes
-./node_modules/.bin/cogmem-doctor
+COGMEM_SKIP_INIT=1 curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash
+cogmem init --yes --agent hermes
+cogmem doctor --fix --agent hermes --workspace .
+cogmem connect hermes --workspace . --auto
+cogmem connect hermes --workspace .
 ```
+
+Hermes integration is currently a skill plus MCP bridge. It does not replace a native Hermes memory provider and it does not patch Hermes runtime internals.
 
 ## Local Quantized Embeddings
 
@@ -44,26 +46,26 @@ Use the matching vector dimension for the selected model. `qwen3-embedding:4b` u
 Preview:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --dry-run
+cogmem import-hermes --workspace . --project hermes --dry-run
 ```
 
 Import:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes
+cogmem import-hermes --workspace . --project hermes
 ```
 
 If Hermes stores memory somewhere else:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
+cogmem import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
 ```
 
 Single session files and batches can be imported explicitly:
 
 ```bash
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md
-./node_modules/.bin/cogmem-import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
+cogmem import-hermes --workspace . --project hermes --session ./one.md
+cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
 ```
 
 The import command is idempotent. Re-running it against the same database skips records already processed by the cursor store.
@@ -76,7 +78,7 @@ import {
   HermesWorkspaceProfile,
   KernelAgentMemoryBackend,
   createMemoryKernelFromConfig,
-} from '@CognitiveOS/core';
+} from 'cogmem';
 
 const kernel = createMemoryKernelFromConfig();
 const memory = new KernelAgentMemoryBackend(kernel);
@@ -108,4 +110,6 @@ console.log(recalled.items);
 
 If a Hermes workspace uses different paths, pass explicit `profilePath` and `sessionDir` values instead of changing core.
 
-For agent-facing instructions, install or read `SKILL.md`. `./node_modules/.bin/cogmem-connect hermes --workspace .` copies it to `~/.hermes/skills/cogmem-memory/SKILL.md`.
+For agent-facing instructions, install or read `SKILL.md`. `cogmem connect hermes --workspace .` copies it to `~/.hermes/skills/cogmem-memory/SKILL.md`.
+
+`cogmem connect hermes --workspace . --auto` patches the Hermes MCP config with a `cogmem` server command. After running it, restart or reload Hermes so the MCP server list is re-read.

@@ -29,7 +29,7 @@ class FakeEmbeddingProvider implements EmbeddingProvider {
 }
 
 function fixture() {
-  const dbPath = join(mkdtempSync(join(tmpdir(), 'agent-brain-reembed-')), 'brain.db');
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'cogmem-reembed-')), 'brain.db');
   const db = new Database(dbPath);
   const graph = new MemoryGraph(dbPath);
   const store = new NeuronEmbeddingStore(db);

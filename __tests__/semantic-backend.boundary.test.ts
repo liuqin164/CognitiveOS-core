@@ -22,7 +22,7 @@ describe('Semantic Backend Boundary', () => {
   });
 
   it('warms up Gemma 4 E4B explicitly and then selects it for offline consolidation', () => {
-    const modelDir = `/tmp/agent-brain-gemma-${Date.now()}`;
+    const modelDir = `/tmp/cogmem-gemma-${Date.now()}`;
     const readyFile = join(modelDir, 'ready.json');
     mkdirSync(modelDir, { recursive: true });
 
@@ -50,8 +50,8 @@ describe('Semantic Backend Boundary', () => {
     const runtime = new SemanticBackendRuntime({
       mode: 'hybrid',
       providerId: 'hybrid-rule-plus-gemma4-e4b',
-      modelPath: '/tmp/agent-brain-missing-gemma-model',
-      readinessFile: '/tmp/agent-brain-missing-gemma-ready.json',
+      modelPath: '/tmp/cogmem-missing-gemma-model',
+      readinessFile: '/tmp/cogmem-missing-gemma-ready.json',
       requireReady: false
     });
 
@@ -68,8 +68,8 @@ describe('Semantic Backend Boundary', () => {
     const runtime = new SemanticBackendRuntime({
       mode: 'model_backed',
       providerId: 'gemma4-e4b-local',
-      modelPath: '/tmp/agent-brain-missing-gemma-model-explicit',
-      readinessFile: '/tmp/agent-brain-missing-gemma-ready-explicit.json',
+      modelPath: '/tmp/cogmem-missing-gemma-model-explicit',
+      readinessFile: '/tmp/cogmem-missing-gemma-ready-explicit.json',
       requireReady: true
     });
 
@@ -81,8 +81,8 @@ describe('Semantic Backend Boundary', () => {
     const runtime = new SemanticBackendRuntime({
       mode: 'model_backed',
       providerId: 'gemma4-e4b-local',
-      modelPath: '/tmp/agent-brain-missing-gemma-model-no-warmup',
-      readinessFile: '/tmp/agent-brain-missing-gemma-ready-no-warmup.json',
+      modelPath: '/tmp/cogmem-missing-gemma-model-no-warmup',
+      readinessFile: '/tmp/cogmem-missing-gemma-ready-no-warmup.json',
       requireReady: false
     });
 

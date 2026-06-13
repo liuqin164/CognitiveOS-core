@@ -20,7 +20,7 @@ export class BenchmarkReport {
 
   formatConsoleFromPersisted(report: PersistedBenchmarkReport): string {
     const lines: string[] = [
-      'agent-brain v0.8 Benchmark Report',
+      'cogmem v0.8 Benchmark Report',
       '=================================='
     ];
 

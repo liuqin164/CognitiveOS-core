@@ -48,7 +48,7 @@ export class UserInsightExtractor {
     }
     buildPrompt(projectId, neurons) {
         return [
-            'Extract durable user insights from these agent-brain memories.',
+            'Extract durable user insights from these cogmem memories.',
             'Return JSON array only. Each item: {category, content, evidenceNeuronIds, expiresAt?}.',
             'Allowed categories: preference, habit, domain_knowledge, communication_style, goal.',
             'Do not include confidence; CPU will calculate it.',

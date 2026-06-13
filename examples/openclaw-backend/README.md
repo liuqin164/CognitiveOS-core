@@ -1,16 +1,15 @@
 # OpenClaw Backend
 
-Use core as OpenClaw's durable memory backend without installing CognitiveOS.
+Use cogmem as OpenClaw's durable memory backend.
 
 ## Install
 
 ```bash
-export COGMEM_CORE_REPO="github:<owner>/CognitiveOS-core#main"
-bun add "$COGMEM_CORE_REPO"
-./node_modules/.bin/cogmem-connect openclaw --workspace .
-./node_modules/.bin/cogmem-init --agent openclaw --scope project
-./node_modules/.bin/cogmem-doctor
-./node_modules/.bin/cogmem-connect openclaw --workspace . --auto --force
+COGMEM_SKIP_INIT=1 curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | bash
+cogmem init --yes --agent openclaw --scope project
+cogmem doctor --fix --agent openclaw --workspace .
+cogmem connect openclaw --workspace .
+cogmem connect openclaw --workspace . --auto --force
 ```
 
 ## Local Quantized Embeddings
@@ -49,15 +48,15 @@ timeout_ms = 60000
 Then run:
 
 ```bash
-./node_modules/.bin/cogmem memory dream --project openclaw --promote --json
-./node_modules/.bin/cogmem memory govern --project openclaw --json
-./node_modules/.bin/cogmem memory candidates --project openclaw --status candidate --json
+cogmem memory dream --project openclaw --promote --json
+cogmem memory govern --project openclaw --json
+cogmem memory candidates --project openclaw --status candidate --json
 ```
 
 For a supervised long-running worker instead of cron:
 
 ```bash
-./node_modules/.bin/cogmem memory dream --project openclaw --watch --interval-ms 300000 --promote --json
+cogmem memory dream --project openclaw --watch --interval-ms 300000 --promote --json
 ```
 
 The Dream Worker proposes candidate memories only. CPU governance is a separate step. Use `--promote` or `cogmem memory govern` to turn evidence-backed summaries/preferences into provisional memory and to accept semantic tags, indexing decisions, event relations, and edge adjustments as organization metadata. It does not rewrite verified facts or promote tool/LLM output into active memory.
@@ -67,22 +66,22 @@ The Dream Worker proposes candidate memories only. CPU governance is a separate 
 Preview:
 
 ```bash
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --dry-run
+cogmem import-openclaw --workspace . --project openclaw --dry-run
 ```
 
 Import:
 
 ```bash
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw
+cogmem import-openclaw --workspace . --project openclaw
 ```
 
 Single source files and batches can be imported explicitly:
 
 ```bash
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --session ./one.md
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --session ./one.md --session ./two.md
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --memory ./one.md
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --memory ./one.md --memory ./two.md
+cogmem import-openclaw --workspace . --project openclaw --session ./one.md
+cogmem import-openclaw --workspace . --project openclaw --session ./one.md --session ./two.md
+cogmem import-openclaw --workspace . --project openclaw --memory ./one.md
+cogmem import-openclaw --workspace . --project openclaw --memory ./one.md --memory ./two.md
 ```
 
 The import command is idempotent. Re-running it against the same database skips records already processed by the cursor store.
@@ -96,7 +95,7 @@ import {
   KernelAgentMemoryBackend,
   OpenClawWorkspaceProfile,
   createMemoryKernelFromConfig,
-} from '@CognitiveOS/core';
+} from 'cogmem';
 
 const kernel = createMemoryKernelFromConfig();
 const memory = new KernelAgentMemoryBackend(kernel);
@@ -127,7 +126,7 @@ The profile imports memory sources only. It ignores operational files such as `A
 When `recalled.items[]` contains `sourceContext`, the agent can answer where the original raw event lives and inspect surrounding context. If the user asks for exact wording or a full thread, use the provided `sourceContext.locator.command`, for example:
 
 ```bash
-./node_modules/.bin/cogmem memory show --event <eventId> --before 2 --after 2
+cogmem memory show --event <eventId> --before 2 --after 2
 ```
 
 Do not quote `compiled_memory` or `imported_summary` items as user wording when `canAnswerExactQuote=false`.
@@ -135,7 +134,7 @@ Do not quote `compiled_memory` or `imported_summary` items as user wording when 
 If automatic `# CogMem Retrieved Memory` injection is absent or too thin, the agent should actively query the kernel before saying it does not remember:
 
 ```bash
-./node_modules/.bin/cogmem memory recall --query "<user question>" --project openclaw --agent openclaw --json
+cogmem memory recall --query "<user question>" --project openclaw --agent openclaw --json
 ```
 
 Use `--intent previous_session_summary` for "上个会话我们聊了什么" and `--intent forensic_quote` for "我当时的原话是什么". Only fall back to legacy `memory/` Markdown files after `cogmem memory recall` or `cogmem memory search` fails to find useful evidence.
@@ -143,25 +142,25 @@ Use `--intent previous_session_summary` for "上个会话我们聊了什么" and
 After upgrading an existing OpenClaw workspace that imported old memory before raw ledger anchors were available, run:
 
 ```bash
-./node_modules/.bin/cogmem-import-openclaw --workspace . --project openclaw --config .cogmem/config.toml --reindex-raw --json
+cogmem import-openclaw --workspace . --project openclaw --config .cogmem/config.toml --reindex-raw --json
 ```
 
 This backfills searchable raw anchors for old imported memories without duplicating compiled memory or vectors.
 
-For agent-facing instructions, install or read `SKILL.md`. `./node_modules/.bin/cogmem-connect openclaw --workspace .` copies it to `<workspace>/skills/cogmem-memory/SKILL.md`.
+For agent-facing instructions, install or read `SKILL.md`. `cogmem connect openclaw --workspace .` copies it to `<workspace>/skills/cogmem-memory/SKILL.md`.
 
 To make future OpenClaw turns automatically recall and record memory, run:
 
 ```bash
-./node_modules/.bin/cogmem-connect openclaw --workspace . --auto --force
+cogmem connect openclaw --workspace . --auto --force
 ```
 
-`--auto` installs `<workspace>/extensions/cogmem-auto-memory/`, patches OpenClaw `plugins.load.paths`, and enables a local plugin wrapper with `before_prompt_build` and `agent_end` hooks. The wrapper calls `KernelAgentMemoryBackend` through the public `@CognitiveOS/core` API via a Bun bridge; core still does not import OpenClaw.
+`--auto` installs `<workspace>/extensions/cogmem-auto-memory/`, patches OpenClaw `plugins.load.paths`, and enables a local plugin wrapper with `before_prompt_build` and `agent_end` hooks. The wrapper calls `KernelAgentMemoryBackend` through the public `cogmem` API via a Bun bridge; core still does not import OpenClaw.
 
 If the package is updated later, repair the OpenClaw wiring with:
 
 ```bash
-./node_modules/.bin/cogmem-doctor --fix --agent openclaw --workspace .
+cogmem doctor --fix --agent openclaw --workspace .
 ```
 
-Current OpenClaw memory config is OpenClaw-owned (`memory.backend` supports backends such as `"builtin"` and `"qmd"`). Do not add unknown host config fields for CognitiveOS-core and do not write `plugins.slots.memory`.
+Current OpenClaw memory config is OpenClaw-owned (`memory.backend` supports backends such as `"builtin"` and `"qmd"`). Do not add unknown host config fields for cogmem and do not write `plugins.slots.memory`.

@@ -5,7 +5,7 @@ export const ZH_ENTITY_HINTS = [
     'Postgres',
     'Kubernetes',
     'MemoryKernel',
-    'CognitiveOS',
+    'Cogmem',
     'Qwen',
     'Ollama',
     'LongMemEval',

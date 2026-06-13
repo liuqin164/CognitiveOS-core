@@ -625,7 +625,7 @@ function preferenceCategory(text: string): string {
 
 function preferenceTags(text: string): string[] {
   const tags = ['source:explicit_user_statement'];
-  if (/记忆内核|CogMem|CognitiveOS|OpenClaw|Hermes|Obsidian|wiki/iu.test(text)) tags.push('scope:project');
+  if (/记忆内核|CogMem|cogmem|OpenClaw|Hermes|Obsidian|wiki/iu.test(text)) tags.push('scope:project');
   if (/本地优先|local-first/iu.test(text)) tags.push('policy:local_first');
   if (/不要|别|never|do not|don't/iu.test(text)) tags.push('kind:negative_constraint');
   if (/长期目标|目标是|goal/iu.test(text)) tags.push('kind:goal');
@@ -634,7 +634,7 @@ function preferenceTags(text: string): string[] {
 
 function extractTopics(text: string): string[] {
   const topics: string[] = [];
-  for (const topic of ['CogMem', 'CognitiveOS', 'OpenClaw', 'Hermes', 'Obsidian', 'wiki', '记忆内核', '记忆黑盒', '上下文噪声', 'source locator', 'raw ledger', 'local-first']) {
+  for (const topic of ['CogMem', 'cogmem', 'OpenClaw', 'Hermes', 'Obsidian', 'wiki', '记忆内核', '记忆黑盒', '上下文噪声', 'source locator', 'raw ledger', 'local-first']) {
     if (text.toLowerCase().includes(topic.toLowerCase())) topics.push(topic);
   }
   return [...new Set(topics)];
