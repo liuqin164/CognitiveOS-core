@@ -40,17 +40,15 @@ latest_release_asset() {
   local api="https://api.github.com/repos/$REPO/releases/latest"
   local payload
   payload="$(curl -fsSL "$api" || true)"
-  local asset
-  asset="$(printf '%s\n' "$payload" \
-    | sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\.tgz\)".*/\1/p' \
-    | head -n 1)"
+  
+  local tag
+  tag="$(printf '%s\n' "$payload" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
 
-  if [ -n "$asset" ]; then
-    printf '%s\n' "$asset"
-    return
+  if [ -n "$tag" ]; then
+    printf 'github:%s#%s\n' "$REPO" "$tag"
+  else
+    printf 'github:%s#main\n' "$REPO"
   fi
-
-  printf 'https://github.com/%s/releases/latest/download/cogmem.tgz\n' "$REPO"
 }
 
 ensure_install_home() {
