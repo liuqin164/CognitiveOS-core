@@ -927,7 +927,11 @@ test('unified cogmem CLI dispatches doctor and update commands', async () => {
   expect(doctor.exitCode).toBe(0);
   expect(doctor.stdout).toContain('OK kernel ready');
 
-  const update = await runCli(['bun', cogmemBin, 'update', '--dry-run', '--json']);
+  const update = await runCli(
+    ['bun', cogmemBin, 'update', '--dry-run', '--json'],
+    coreRoot,
+    { COGMEM_RELEASE_TARBALL: 'github:liuqin164/cogmem#2.0.1' },
+  );
   expect(update.stderr).toBe('');
   expect(update.exitCode).toBe(0);
   const parsed = JSON.parse(update.stdout);
@@ -935,8 +939,10 @@ test('unified cogmem CLI dispatches doctor and update commands', async () => {
   expect(parsed.dryRun).toBe(true);
   expect(parsed.from).toBe('latest');
   expect(parsed.releaseRepo).toBe('liuqin164/cogmem');
+  expect(parsed.releaseAsset).toBe('github:liuqin164/cogmem#2.0.1');
   expect(parsed.targetCwd).toBe(coreRoot);
-  expect(parsed.nextCommand).toContain('cogmem@https://github.com/liuqin164/cogmem/releases/latest/download/cogmem.tgz');
+  expect(parsed.nextCommand).toContain('cogmem@github:liuqin164/cogmem#2.0.1');
+  expect(parsed.nextCommand).not.toContain('releases/latest/download/cogmem.tgz');
   expect(parsed.nextCommand).not.toContain('@CognitiveOS/core');
 });
 
@@ -956,7 +962,10 @@ test('cogmem update targets the one-line installer home when cwd has no package 
   const update = await runCli(
     ['bun', cogmemBin, 'update', '--dry-run', '--json'],
     randomCwd,
-    { COGMEM_INSTALL_HOME: installHome },
+    {
+      COGMEM_INSTALL_HOME: installHome,
+      COGMEM_RELEASE_TARBALL: 'github:liuqin164/cogmem#2.0.1',
+    },
   );
 
   expect(update.stderr).toBe('');
@@ -964,7 +973,9 @@ test('cogmem update targets the one-line installer home when cwd has no package 
   const parsed = JSON.parse(update.stdout);
   expect(parsed.targetCwd).toBe(installHome);
   expect(parsed.currentSpec).toContain('cogmem.tgz');
-  expect(parsed.nextCommand).toContain('cogmem@https://github.com/liuqin164/cogmem/releases/latest/download/cogmem.tgz');
+  expect(parsed.releaseAsset).toBe('github:liuqin164/cogmem#2.0.1');
+  expect(parsed.nextCommand).toContain('cogmem@github:liuqin164/cogmem#2.0.1');
+  expect(parsed.nextCommand).not.toContain('releases/latest/download/cogmem.tgz');
 });
 
 test('cogmem-connect installs Hermes skill into the real Hermes skills directory by default', async () => {

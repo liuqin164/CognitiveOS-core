@@ -48,3 +48,4 @@
 - Fixed semantic relation candidates so promoted records keep a readable `content.summary` instead of empty organization metadata.
 - Fixed agent-facing raw fallback recall to retry host-neutral keyword cues and avoid returning duplicate user/assistant events from the same turn.
 - Fixed the one-line installer so `curl | bash` starts `cogmem init` from `/dev/tty` instead of consuming an exhausted pipe.
+- Fixed `cogmem update` so `latest` dynamically resolves the GitHub latest release payload instead of fabricating a nonexistent `releases/latest/download/cogmem.tgz` package URL.

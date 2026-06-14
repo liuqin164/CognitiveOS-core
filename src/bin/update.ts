@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { DEFAULT_RELEASE_REPO, resolveLatestReleaseSpec } from './update-release.js';
+
 interface UpdateArgs {
   dryRun: boolean;
   yes: boolean;
@@ -11,9 +13,6 @@ interface UpdateArgs {
   installHome?: string;
   manager?: 'bun' | 'npm' | 'pnpm';
 }
-
-const RELEASE_REPO = 'liuqin164/cogmem';
-const LATEST_RELEASE_TARBALL = `https://github.com/${RELEASE_REPO}/releases/latest/download/cogmem.tgz`;
 
 function readArgs(argv: string[]): UpdateArgs {
   const values: Record<string, string | boolean> = {};
@@ -49,10 +48,9 @@ function detectManager(cwd: string): 'bun' | 'npm' | 'pnpm' {
 }
 
 function buildCommand(manager: 'bun' | 'npm' | 'pnpm', spec: string): string[] {
-  const resolvedSpec = spec === 'latest' ? LATEST_RELEASE_TARBALL : spec;
-  if (manager === 'bun') return ['bun', 'add', `cogmem@${resolvedSpec}`];
-  if (manager === 'pnpm') return ['pnpm', 'add', `cogmem@${resolvedSpec}`];
-  return ['npm', 'install', `cogmem@${resolvedSpec}`];
+  if (manager === 'bun') return ['bun', 'add', `cogmem@${spec}`];
+  if (manager === 'pnpm') return ['pnpm', 'add', `cogmem@${spec}`];
+  return ['npm', 'install', `cogmem@${spec}`];
 }
 
 function installedSpec(cwd: string): string | undefined {
@@ -98,16 +96,20 @@ function resolveUpdateCwd(args: UpdateArgs, env: Record<string, string | undefin
 
 async function main(): Promise<void> {
   const args = readArgs(process.argv.slice(2));
+  const releaseRepo = process.env.COGMEM_REPO || DEFAULT_RELEASE_REPO;
+  const resolvedSpec = args.from === 'latest'
+    ? await resolveLatestReleaseSpec({ repo: releaseRepo, env: process.env })
+    : args.from;
   const targetCwd = resolveUpdateCwd(args, process.env);
   const manager = args.manager || detectManager(targetCwd);
-  const command = buildCommand(manager, args.from);
+  const command = buildCommand(manager, resolvedSpec);
   const result = {
     command: 'update',
     dryRun: args.dryRun,
     manager,
     from: args.from,
-    releaseRepo: RELEASE_REPO,
-    releaseAsset: LATEST_RELEASE_TARBALL,
+    releaseRepo,
+    releaseAsset: resolvedSpec,
     targetCwd,
     currentSpec: installedSpec(targetCwd),
     nextCommand: command.join(' '),

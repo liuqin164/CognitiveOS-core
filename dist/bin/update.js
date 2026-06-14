@@ -2,8 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-const RELEASE_REPO = 'liuqin164/cogmem';
-const LATEST_RELEASE_TARBALL = `https://github.com/${RELEASE_REPO}/releases/latest/download/cogmem.tgz`;
+import { DEFAULT_RELEASE_REPO, resolveLatestReleaseSpec } from './update-release.js';
 function readArgs(argv) {
     const values = {};
     for (let index = 0; index < argv.length; index += 1) {
@@ -39,12 +38,11 @@ function detectManager(cwd) {
     return 'npm';
 }
 function buildCommand(manager, spec) {
-    const resolvedSpec = spec === 'latest' ? LATEST_RELEASE_TARBALL : spec;
     if (manager === 'bun')
-        return ['bun', 'add', `cogmem@${resolvedSpec}`];
+        return ['bun', 'add', `cogmem@${spec}`];
     if (manager === 'pnpm')
-        return ['pnpm', 'add', `cogmem@${resolvedSpec}`];
-    return ['npm', 'install', `cogmem@${resolvedSpec}`];
+        return ['pnpm', 'add', `cogmem@${spec}`];
+    return ['npm', 'install', `cogmem@${spec}`];
 }
 function installedSpec(cwd) {
     const manifest = readPackageManifest(cwd);
@@ -83,16 +81,20 @@ function resolveUpdateCwd(args, env) {
 }
 async function main() {
     const args = readArgs(process.argv.slice(2));
+    const releaseRepo = process.env.COGMEM_REPO || DEFAULT_RELEASE_REPO;
+    const resolvedSpec = args.from === 'latest'
+        ? await resolveLatestReleaseSpec({ repo: releaseRepo, env: process.env })
+        : args.from;
     const targetCwd = resolveUpdateCwd(args, process.env);
     const manager = args.manager || detectManager(targetCwd);
-    const command = buildCommand(manager, args.from);
+    const command = buildCommand(manager, resolvedSpec);
     const result = {
         command: 'update',
         dryRun: args.dryRun,
         manager,
         from: args.from,
-        releaseRepo: RELEASE_REPO,
-        releaseAsset: LATEST_RELEASE_TARBALL,
+        releaseRepo,
+        releaseAsset: resolvedSpec,
         targetCwd,
         currentSpec: installedSpec(targetCwd),
         nextCommand: command.join(' '),

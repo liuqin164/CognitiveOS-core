@@ -144,7 +144,7 @@ curl -fsSL https://raw.githubusercontent.com/liuqin164/cogmem/main/install.sh | 
 Or install into an existing Bun workspace:
 
 ```bash
-bun add "cogmem@https://github.com/liuqin164/cogmem/releases/latest/download/cogmem.tgz"
+bun add "cogmem@github:liuqin164/cogmem#2.0.0"
 bunx cogmem init
 ```
 
@@ -395,6 +395,10 @@ cogmem update --yes
 ```text
 https://github.com/liuqin164/cogmem/releases/latest
 ```
+
+The updater resolves that release dynamically. It prefers a `.tgz` asset whose
+name or URL contains `cogmem`, falls back to the latest release tag when no
+package asset is attached, and only then falls back to `github:liuqin164/cogmem#main`.
 
 For OpenClaw after an update:
 
