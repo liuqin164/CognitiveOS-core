@@ -1,4 +1,5 @@
 import Database from 'bun:sqlite';
+import { pathToFileURL } from 'node:url';
 import { computeStableHash, parseLooseTimestamp } from '../types.js';
 const TEXT_COLUMNS = [
     'content',
@@ -31,7 +32,7 @@ export class HermesStateDbAdapter {
         const records = [];
         let db;
         try {
-            db = new Database(source.sourcePath, { readonly: true });
+            db = openReadonlySqlite(source.sourcePath);
             if (!hasTable(db, 'messages')) {
                 diagnostics.push(this.diagnostic(source, 'error', 'hermes_state_db_missing_messages_table', 'Hermes state database does not contain a messages table.'));
                 return this.result(source, snapshot, records, diagnostics);
@@ -235,11 +236,31 @@ function parseTimestampValue(value, fallback) {
     if (!value)
         return fallback;
     const trimmed = value.trim();
-    if (/^\d+$/.test(trimmed)) {
+    if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
         const numeric = Number(trimmed);
         return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
     }
     return parseLooseTimestamp(trimmed, fallback);
+}
+function openReadonlySqlite(sourcePath) {
+    const attempts = [
+        sourcePath,
+        `${pathToFileURL(sourcePath).href}?immutable=1`,
+    ];
+    let lastError;
+    for (const attempt of attempts) {
+        let db;
+        try {
+            db = new Database(attempt, { readonly: true, create: false });
+            db.prepare(`SELECT name FROM sqlite_master LIMIT 1`).get();
+            return db;
+        }
+        catch (error) {
+            lastError = error;
+            db?.close();
+        }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 function numericMetadata(record, key) {
     const value = record.metadata?.[key];

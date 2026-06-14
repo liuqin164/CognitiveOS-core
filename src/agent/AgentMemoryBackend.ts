@@ -410,11 +410,26 @@ export class KernelAgentMemoryBackend {
       startTime: query.startTime,
       endTime: query.endTime,
     });
-    const scopedEvidence = this.filterAgentEvidence(result.rawEvidence, query.agentId).slice(0, limit);
-    if (scopedEvidence.length > 0) {
+    const scopedItems = this.filterAgentEvidence(result.rawEvidence, query.agentId)
+      .slice(0, limit)
+      .map((neuron) => this.toAgentRecallItem(neuron));
+    if (scopedItems.length > 0) {
+      const rawFallbackItems = this.rawLedgerFallbackItemsForQuery(queryPlan, query, limit);
+      if (this.shouldPreferRawLedgerFallback(scopedItems, rawFallbackItems, queryPlan)) {
+        return {
+          recallMode: 'raw_ledger_fallback',
+          items: this.mergeRecallItems(rawFallbackItems, scopedItems, limit),
+          narrative: result.navigation?.narrative,
+          pulseTrace: result.navigation?.pulse.trace,
+          temporalTraversal: result.navigation?.branchSearch.temporalTraversal,
+          runtime: result.navigation?.runtime,
+          fallbackUsed: true,
+          queryPlan,
+        };
+      }
       return {
         recallMode: result.recallMode,
-        items: scopedEvidence.map((neuron) => this.toAgentRecallItem(neuron)),
+        items: scopedItems,
         narrative: result.navigation?.narrative,
         pulseTrace: result.navigation?.pulse.trace,
         temporalTraversal: result.navigation?.branchSearch.temporalTraversal,
@@ -432,6 +447,19 @@ export class KernelAgentMemoryBackend {
       .slice(0, limit)
       .map((neuron) => this.toAgentRecallItem(neuron));
     if (fallbackItems.length > 0) {
+      const rawFallbackItems = this.rawLedgerFallbackItemsForQuery(queryPlan, query, limit);
+      if (this.shouldPreferRawLedgerFallback(fallbackItems, rawFallbackItems, queryPlan)) {
+        return {
+          recallMode: 'raw_ledger_fallback',
+          items: this.mergeRecallItems(rawFallbackItems, fallbackItems, limit),
+          narrative: result.navigation?.narrative,
+          pulseTrace: result.navigation?.pulse.trace,
+          temporalTraversal: result.navigation?.branchSearch.temporalTraversal,
+          runtime: result.navigation?.runtime,
+          fallbackUsed: true,
+          queryPlan,
+        };
+      }
       return {
         recallMode: 'brain_recall_fallback',
         items: fallbackItems,
@@ -444,19 +472,7 @@ export class KernelAgentMemoryBackend {
       };
     }
 
-    const rawEvents = this.dedupeRawEventsByTurnPreferUser(
-      this.searchRawEventsByQueryPlan(queryPlan, query, Math.max(limit * 2, 10))
-    );
-    const rawItems = rawEvents
-      .filter((event) => this.isAgentRawEvent(event, query.agentId))
-      .filter((event) => this.isAllowedSession(event, query))
-      .filter((event) => !this.isOperationalNoiseRawEvent(event))
-      .slice(0, limit)
-      .map((event) => this.toAgentRawRecallItem(event, {
-        sourceType: 'raw_ledger',
-        whyMatched: 'raw_ledger_text_fallback',
-        canAnswerExactQuote: true,
-      }));
+    const rawItems = this.rawLedgerFallbackItemsForQuery(queryPlan, query, limit);
 
     return {
       recallMode: 'raw_ledger_fallback',
@@ -578,6 +594,76 @@ export class KernelAgentMemoryBackend {
     return out;
   }
 
+  private rawLedgerFallbackItemsForQuery(
+    queryPlan: AgentRecallQueryPlan,
+    query: AgentRecallQuery,
+    limit: number
+  ): AgentRecallItem[] {
+    const searchedEvents = this.searchRawEventsByQueryPlan(queryPlan, query, Math.max(limit * 2, 10));
+    const rawEvents = queryPlan.intent === 'forensic_quote'
+      ? this.dedupeRawEventsByTurnPreferUser(searchedEvents)
+      : this.dedupeRawEventsByTurnPreferCue(searchedEvents, queryPlan);
+    return rawEvents
+      .filter((event) => this.isAgentRawEvent(event, query.agentId))
+      .filter((event) => this.isAllowedSession(event, query))
+      .filter((event) => !this.isOperationalNoiseRawEvent(event))
+      .slice(0, limit)
+      .map((event) => this.toAgentRawRecallItem(event, {
+        sourceType: 'raw_ledger',
+        whyMatched: 'raw_ledger_text_fallback',
+        canAnswerExactQuote: true,
+      }));
+  }
+
+  private shouldPreferRawLedgerFallback(
+    candidateItems: AgentRecallItem[],
+    rawFallbackItems: AgentRecallItem[],
+    queryPlan: AgentRecallQueryPlan
+  ): boolean {
+    if (rawFallbackItems.length === 0) return false;
+    return !this.itemsContainRecallCue(candidateItems, queryPlan)
+      && this.itemsContainRecallCue(rawFallbackItems, queryPlan);
+  }
+
+  private itemsContainRecallCue(items: AgentRecallItem[], queryPlan: AgentRecallQueryPlan): boolean {
+    const cues = this.recallCueTerms(queryPlan);
+    if (cues.length === 0) return true;
+    return items.some((item) => {
+      const haystack = this.itemSearchableText(item).toLowerCase();
+      return cues.some((cue) => haystack.includes(cue.toLowerCase()));
+    });
+  }
+
+  private recallCueTerms(queryPlan: AgentRecallQueryPlan): string[] {
+    const terms = [
+      ...queryPlan.keywords,
+      ...queryPlan.semanticCuePhrases.flatMap((phrase) => phrase.split(/\s+/)),
+    ]
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 2 && !/^(hermes|openclaw|cogmem)$/i.test(term));
+    return uniqueNonEmpty(terms);
+  }
+
+  private itemSearchableText(item: AgentRecallItem): string {
+    return [
+      item.text,
+      item.source || '',
+      item.tags.join(' '),
+    ].join('\n');
+  }
+
+  private mergeRecallItems(primary: AgentRecallItem[], secondary: AgentRecallItem[], limit: number): AgentRecallItem[] {
+    const out: AgentRecallItem[] = [];
+    const seen = new Set<string>();
+    for (const item of [...primary, ...secondary]) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      out.push(item);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
   private dedupeRawEventsByTurnPreferUser(events: MemoryEvent[]): MemoryEvent[] {
     const byTurn = new Map<string, MemoryEvent>();
     for (const event of events) {
@@ -639,8 +725,53 @@ export class KernelAgentMemoryBackend {
         (a.globalSeq || 0) - (b.globalSeq || 0)
         || (a.threadSeq || 0) - (b.threadSeq || 0)
         || (a.eventOrdinal || 0) - (b.eventOrdinal || 0)
-        || a.eventId.localeCompare(b.eventId)
-      ));
+      || a.eventId.localeCompare(b.eventId)
+    ));
+  }
+
+  private dedupeRawEventsByTurnPreferCue(events: MemoryEvent[], queryPlan: AgentRecallQueryPlan): MemoryEvent[] {
+    const byTurn = new Map<string, MemoryEvent>();
+    for (const event of events) {
+      const key = event.turnId || event.eventId;
+      const existing = byTurn.get(key);
+      if (!existing) {
+        byTurn.set(key, event);
+        continue;
+      }
+      const eventScore = this.rawEventCueScore(event, queryPlan);
+      const existingScore = this.rawEventCueScore(existing, queryPlan);
+      if (eventScore > existingScore || (
+        eventScore === existingScore
+        && this.rawEventTextLength(event) > this.rawEventTextLength(existing)
+      )) {
+        byTurn.set(key, event);
+      }
+    }
+    return [...byTurn.values()].sort((a, b) => (
+      this.rawEventCueScore(b, queryPlan) - this.rawEventCueScore(a, queryPlan)
+      || (a.globalSeq || 0) - (b.globalSeq || 0)
+      || (a.threadSeq || 0) - (b.threadSeq || 0)
+      || (a.eventOrdinal || 0) - (b.eventOrdinal || 0)
+      || a.eventId.localeCompare(b.eventId)
+    ));
+  }
+
+  private rawEventCueScore(event: MemoryEvent, queryPlan: AgentRecallQueryPlan): number {
+    const haystack = this.rawEventText(event).toLowerCase();
+    return this.recallCueTerms(queryPlan)
+      .reduce((score, cue) => score + (haystack.includes(cue.toLowerCase()) ? 1 : 0), 0);
+  }
+
+  private rawEventTextLength(event: MemoryEvent): number {
+    return this.rawEventText(event).length;
+  }
+
+  private rawEventText(event: MemoryEvent): string {
+    const payload = event.payload as { text?: unknown; output?: unknown; title?: unknown };
+    if (typeof payload.text === 'string') return payload.text;
+    if (typeof payload.output === 'string') return payload.output;
+    if (typeof payload.title === 'string') return payload.title;
+    return JSON.stringify(event.payload);
   }
 
   private filterAgentEvidence(
@@ -684,9 +815,25 @@ export class KernelAgentMemoryBackend {
 
   private isAgentRawEvent(event: MemoryEvent, agentId: string): boolean {
     if (!event.sourceId) return true;
-    return event.sourceId === agentId
+    if (
+      event.sourceId === agentId
       || event.sourceId.startsWith(`${agentId}:`)
-      || event.sourceId.startsWith(`${agentId}-`);
+      || event.sourceId.startsWith(`${agentId}-`)
+    ) {
+      return true;
+    }
+    const payload = event.payload as { metadata?: Record<string, unknown> };
+    const metadata = payload.metadata || {};
+    const tags = Array.isArray(metadata.tags) ? metadata.tags.filter((tag): tag is string => typeof tag === 'string') : [];
+    const explicitAgentTags = tags.filter((tag) => tag.startsWith('agent:'));
+    if (explicitAgentTags.length > 0) {
+      return explicitAgentTags.includes(`agent:${agentId}`);
+    }
+    if (metadata.imported === true) return true;
+    const sourceType = typeof metadata.sourceType === 'string' ? metadata.sourceType : '';
+    if (/^(hermes_state_db|conversation_markdown|openclaw_|soul_markdown)/.test(sourceType)) return true;
+    if (/^(hermes_state_db|conversation_markdown|openclaw_|soul_markdown)/.test(event.sourceId)) return true;
+    return false;
   }
 
   private isOperationalNoiseRawEvent(event: MemoryEvent): boolean {

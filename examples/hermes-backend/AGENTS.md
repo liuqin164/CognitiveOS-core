@@ -73,7 +73,7 @@ cogmem import-hermes --workspace . --project hermes --state-db ./state.db --dry-
 cogmem import-hermes --workspace . --project hermes --state-db ./state.db
 ```
 
-The SQLite importer prefers message-level `occurredAt`, `timestamp`, or `createdAt`; `InsertTime` is only a fallback. Do not use `InsertTime` as proof of the original conversation date when better message timestamps exist.
+The SQLite importer prefers message-level `occurredAt`, `timestamp`, or `createdAt`; numeric `timestamp` values below millisecond range are epoch seconds. It can read WAL-mode `state.db` through SQLite immutable mode. `InsertTime` is only a fallback. Do not use `InsertTime` as proof of the original conversation date when better message timestamps exist.
 
 Then migrate:
 
@@ -108,6 +108,32 @@ After import, run curation and CPU governance as a supervised worker:
 ```bash
 cogmem memory dream --project hermes --watch --interval-ms 300000 --promote
 ```
+
+## Active Memory Search
+
+If the current prompt does not include enough Cogmem memory context, query Cogmem directly before searching legacy files:
+
+```bash
+cogmem memory recall --query "<user question>" --project hermes --agent hermes --json
+```
+
+For inventory or product questions, use recall first and raw search as a forensic fallback:
+
+```bash
+cogmem memory recall --query "我们记录过哪些库存" --project hermes --agent hermes --json
+cogmem memory search --query "エルビ 库存" --project hermes --json
+cogmem memory show --event <event-id> --before 2 --after 2 --json
+```
+
+`vectors: 0` does not mean Cogmem has no memory. It means the dense vector index has no hot vectors yet. `memory recall` still falls back to governed raw ledger search and returns `sourceContext` locators. Broad inventory questions are expanded into structured cues such as `库存管理`, `在库`, `产品コード`, and `数量`; if compiled-memory candidates miss those cues, raw ledger evidence is preferred.
+
+Check status with:
+
+```bash
+cogmem memory status --project hermes --json
+```
+
+For automation, read the top-level fields `rawEvents`, `vectors`, `dreamedRawCount`, `undreamedRawCount`, and `dreamCoverageRate`.
 
 ## Runtime Wiring
 

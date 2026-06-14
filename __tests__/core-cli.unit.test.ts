@@ -659,6 +659,96 @@ test('memory CLI recall lets agents actively query governed memory with source c
   expect(recalled.queryPlan.semanticCuePhrases).toContain('存档 黑盒');
 });
 
+test('memory CLI recall falls back to imported Hermes raw ledger when vectors are empty', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-memory-hermes-recall-cli-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\nvector_backend = "sqlite-vec"\n');
+
+  const kernel = createMemoryKernel({ dbPath: join(dir, '.cogmem', 'memory.db'), vectorBackend: 'sqlite-vec' });
+  kernel.recordRawEvent({
+    projectId: 'hermes',
+    workspaceId: 'hermes',
+    threadId: 'hermes-session-inventory',
+    sessionId: 'hermes-session-inventory',
+    role: 'user',
+    rawEventType: 'message',
+    content: 'エルビ 库存：PRECIOUS FRUITS 剩余 12 箱，需记录库存。',
+    occurredAt: Date.parse('2026-06-09T01:02:03.000Z'),
+    sourceId: 'hermes_state_db:/tmp/state.db',
+    metadata: {
+      imported: true,
+      sourceType: 'hermes_state_db',
+      tags: ['hermes', 'state_db', 'conversation', 'source:hermes_state_db'],
+    },
+  });
+  kernel.close();
+
+  const recallProc = Bun.spawn({
+    cmd: [
+      'bun',
+      memoryBin,
+      'recall',
+      '--config',
+      configPath,
+      '--project',
+      'hermes',
+      '--agent',
+      'hermes',
+      '--query',
+      '我们记录过哪些库存',
+      '--json',
+    ],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const recallOutput = await new Response(recallProc.stdout).text();
+  const recallError = await new Response(recallProc.stderr).text();
+  expect(await recallProc.exited).toBe(0);
+  expect(recallError).toBe('');
+  const recalled = JSON.parse(recallOutput);
+  expect(recalled.recallMode).toBe('raw_ledger_fallback');
+  expect(recalled.items.some((item: { text: string }) => item.text.includes('PRECIOUS FRUITS'))).toBe(true);
+  expect(recalled.items[0].sourceContext.locator.command).toContain('cogmem memory show --event');
+});
+
+test('memory CLI status JSON exposes stable raw and dream counters', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-memory-status-json-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\nvector_backend = "sqlite-vec"\n');
+
+  const kernel = createMemoryKernel({ dbPath: join(dir, '.cogmem', 'memory.db'), vectorBackend: 'sqlite-vec' });
+  kernel.recordRawEvent({
+    projectId: 'hermes',
+    workspaceId: 'hermes',
+    threadId: 'status-session',
+    sessionId: 'status-session',
+    role: 'user',
+    content: 'status raw event',
+    sourceId: 'hermes_state_db:/tmp/state.db',
+  });
+  kernel.close();
+
+  const statusProc = Bun.spawn({
+    cmd: ['bun', memoryBin, 'status', '--config', configPath, '--project', 'hermes', '--json'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const statusOutput = await new Response(statusProc.stdout).text();
+  const statusError = await new Response(statusProc.stderr).text();
+  expect(await statusProc.exited).toBe(0);
+  expect(statusError).toBe('');
+  const status = JSON.parse(statusOutput);
+  expect(status.rawEvents).toBe(1);
+  expect(status.rawEventCount).toBe(1);
+  expect(status.dreamedRawCount).toBe(0);
+  expect(status.undreamedRawCount).toBe(1);
+  expect(status.dreamCoverageRate).toBe(0);
+});
+
 test('memory CLI runs dream curator and lists governance candidates', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-memory-dream-cli-'));
   const configPath = join(dir, '.cogmem', 'config.toml');

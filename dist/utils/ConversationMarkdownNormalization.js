@@ -56,7 +56,7 @@ export function pickTimestamp(item, fallback) {
         || coerceText(item.InsertTime)
         || coerceText(item.insertTime)
         || coerceText(item.insert_time);
-    const date = raw ? new Date(raw) : new Date(fallback);
+    const date = raw ? parseTimestampDate(raw, fallback) : new Date(fallback);
     const usable = Number.isNaN(date.getTime()) ? new Date(fallback) : date;
     return usable.toISOString();
 }
@@ -462,6 +462,8 @@ function normalizeLooseRecordWithParent(item, parent, index, source, messageInde
 function coerceText(value) {
     if (typeof value === 'string')
         return value;
+    if (typeof value === 'number' || typeof value === 'boolean')
+        return String(value);
     if (Array.isArray(value)) {
         return value
             .map((entry) => {
@@ -479,6 +481,17 @@ function coerceText(value) {
         return value.text;
     }
     return '';
+}
+function parseTimestampDate(raw, fallback) {
+    const trimmed = raw.trim();
+    if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+        const numeric = Number(trimmed);
+        if (Number.isFinite(numeric)) {
+            return new Date(numeric < 10_000_000_000 ? numeric * 1000 : numeric);
+        }
+    }
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? new Date(fallback) : parsed;
 }
 function pickFirstMarkerValue(candidates) {
     for (const [value, label] of candidates) {

@@ -197,11 +197,20 @@ function runStatus(kernel, args) {
         threadId: args.threadId ? [args.threadId] : undefined,
         sessionId: args.sessionId ? [args.sessionId] : undefined,
     });
+    const dreamBacklog = kernel.getDreamBacklogStatus(args.projectId);
+    const dreamCandidateQueue = kernel.getDreamCandidateQueue(args.projectId);
     return {
         rawEventCount: page.total,
+        rawEvents: page.total,
         vectorCount: kernel.vectorStore.getCurrentCount(),
-        dreamBacklog: kernel.getDreamBacklogStatus(args.projectId),
-        dreamCandidateQueue: kernel.getDreamCandidateQueue(args.projectId),
+        vectors: kernel.vectorStore.getCurrentCount(),
+        dreamedRawCount: dreamBacklog.dreamedRawCount,
+        undreamedRawCount: dreamBacklog.undreamedRawCount,
+        dreamCoverageRate: dreamBacklog.dreamCoverageRate,
+        lastDreamedGlobalSeq: dreamBacklog.lastDreamedGlobalSeq,
+        lastDreamedAt: dreamBacklog.lastDreamedAt,
+        dreamBacklog,
+        dreamCandidateQueue,
     };
 }
 function runList(kernel, args) {

@@ -12,10 +12,19 @@ const PROTECTED_PHRASES = [
     '因果链',
     '原话',
     '上下文',
+    '上下文噪声',
     '偏好',
     '项目',
     '约束',
     '边界',
+    '库存',
+    '配置',
+    '安装',
+    '更新',
+    '重启',
+    '报错',
+    '错误',
+    '工具',
 ];
 const QUERY_FILLERS = [
     '我现在不是问你泛泛解释',
@@ -127,6 +136,8 @@ export function extractRecallKeywords(text) {
             continue;
         found.push(cleaned);
     }
+    const existingKeywords = mergeKeywords(found);
+    found.push(...extractCjkCueTerms(normalized).filter((term) => !existingKeywords.some((keyword) => (term.includes(keyword) || keyword.includes(term)))));
     return mergeKeywords(found);
 }
 function isVagueForensicFollowup(query) {
@@ -171,6 +182,12 @@ function buildSemanticCuePhrases(keywords, query, anchorText) {
         out.push('CogMem Memory Context');
         out.push('Memory Context');
     }
+    if (merged.includes('库存') || /库存|inventory|stock/iu.test(text)) {
+        out.push('库存管理');
+        out.push('在库');
+        out.push('产品コード');
+        out.push('数量');
+    }
     return uniqueNonEmpty(out);
 }
 function extractTemporalHints(query) {
@@ -200,6 +217,56 @@ function mergeKeywords(...groups) {
         out.push(normalized);
     }
     return out;
+}
+const CJK_QUERY_STOP_PHRASES = [
+    ...QUERY_FILLERS,
+    '我们',
+    '你们',
+    '你',
+    '我',
+    '是否',
+    '是不是',
+    '有没有',
+    '哪些',
+    '哪个',
+    '什么',
+    '多少',
+    '记录过',
+    '聊过',
+    '讨论过',
+    '之前',
+    '以前',
+    '关于',
+    '和',
+    '这个',
+    '那个',
+    '问题',
+    '的吗',
+    '吗',
+    '呢',
+    '的',
+    '了',
+    '过',
+];
+function extractCjkCueTerms(text) {
+    const candidates = [];
+    for (const match of text.matchAll(/[\u3040-\u30ff\u3400-\u9fff]{2,}/gu)) {
+        let chunk = match[0];
+        for (const filler of CJK_QUERY_STOP_PHRASES) {
+            chunk = chunk.replace(new RegExp(escapeRegExp(filler), 'giu'), ' ');
+        }
+        for (const part of chunk.split(/\s+/)) {
+            const trimmed = part.trim();
+            if (trimmed.length >= 2 && trimmed.length <= 12)
+                candidates.push(trimmed);
+            if (trimmed.length > 12) {
+                for (let index = 0; index <= trimmed.length - 2 && candidates.length < 12; index += 2) {
+                    candidates.push(trimmed.slice(index, Math.min(index + 4, trimmed.length)));
+                }
+            }
+        }
+    }
+    return candidates;
 }
 function uniqueNonEmpty(values) {
     const out = [];

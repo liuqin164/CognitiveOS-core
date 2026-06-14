@@ -216,7 +216,7 @@ cogmem import-hermes --workspace . --project hermes --session ./one.md
 cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
 ```
 
-Hermes `state.db` is scanned automatically when it exists at the workspace root. The importer reads the SQLite `messages` table, preserves message order, and prefers message-level `occurredAt` / `timestamp` / `createdAt` fields; `InsertTime` is only a fallback when the original message time is absent.
+Hermes `state.db` is scanned automatically when it exists at the workspace root. The importer reads the SQLite `messages` table, preserves message order, supports WAL-mode read-only databases through SQLite immutable mode, and prefers message-level `occurredAt` / `timestamp` / `createdAt` fields. Numeric `timestamp` values are treated as epoch seconds when they are below millisecond range. `InsertTime` is only a fallback when the original message time is absent.
 
 Imports are idempotent. Re-running the same import skips records already processed by the cursor store. Use `--json --progress` when a host agent needs machine-readable output while still receiving progress on stderr.
 
@@ -330,6 +330,22 @@ Agents should not search legacy Markdown files first. They should ask cogmem:
 
 ```bash
 cogmem memory recall --query "what did we discuss about memory black boxes?" --project openclaw --agent openclaw --json
+```
+
+Hermes recall should use the Hermes project and agent identifiers:
+
+```bash
+cogmem memory recall --query "我们记录过哪些库存" --project hermes --agent hermes --json
+cogmem memory search --query "エルビ 库存" --project hermes --json
+cogmem memory show --event <event-id> --before 2 --after 2 --json
+```
+
+`memory recall` can still return source-anchored raw ledger evidence when `vectors` is `0`. In that state, recall falls back to governed raw FTS and returns `sourceContext` locators instead of claiming vector search succeeded. Broad inventory questions such as `我们记录过哪些库存` are expanded into structured ledger cues such as `库存管理`, `在库`, `产品コード`, and `数量`; if compiled-memory candidates do not contain those cues, raw ledger evidence is preferred.
+
+`cogmem memory status --json` exposes stable top-level counters:
+
+```text
+rawEvents, vectors, dreamedRawCount, undreamedRawCount, dreamCoverageRate
 ```
 
 Useful intents:

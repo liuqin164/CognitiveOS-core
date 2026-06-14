@@ -98,6 +98,44 @@ test('agent backend raw fallback finds multilingual Hermes terms without hot vec
   kernel.close();
 });
 
+test('agent backend prefers raw ledger cue matches over unrelated compiled recall', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-backend-raw-fallback-cue-'));
+  const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  await kernel.ingest({
+    projectId: 'hermes',
+    content: 'Maestro is an agent workflow framework with context management and tool orchestration notes.',
+    source: 'hermes_state_db:/tmp/state.db',
+    sourceType: 'llm_inference',
+    tags: ['agent:hermes', 'source:hermes_state_db'],
+  });
+  await backend.rememberTurnWithResult({
+    agentId: 'hermes',
+    projectId: 'hermes',
+    sessionId: 'hermes-inventory-session',
+    userText: 'エルビ ページの库存管理を確認して。',
+    assistantText: '库存管理には PRECIOUS FRUITS と产品コード 24412 が含まれます。',
+    timestamp: Date.parse('2026-06-10T02:57:05.445Z'),
+    ingestMode: 'raw_archive_only',
+  });
+
+  const recalled = backend.recall({
+    agentId: 'hermes',
+    projectId: 'hermes',
+    query: '我们记录过哪些库存',
+    limit: 5,
+  });
+
+  expect(recalled.recallMode).toBe('raw_ledger_fallback');
+  expect(recalled.fallbackUsed).toBe(true);
+  expect(recalled.queryPlan.searchTexts).toContain('库存管理');
+  expect(recalled.items[0].sourceType).toBe('raw_ledger');
+  expect(recalled.items.some((item) => item.text.includes('PRECIOUS FRUITS'))).toBe(true);
+
+  kernel.close();
+});
+
 test('agent backend selective mode compiles durable instructions but skips low-signal chatter', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agent-backend-selective-'));
   const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });

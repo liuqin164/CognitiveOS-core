@@ -162,6 +162,44 @@ test('cogmem-normalize-transcript expands Hermes JSONL session objects and prese
   expect(output).not.toContain('[2026-06-13T16:36:00.000Z]');
 });
 
+test('cogmem-normalize-transcript treats Hermes numeric timestamp as epoch seconds before InsertTime', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-normalize-hermes-jsonl-seconds-'));
+  const inputPath = join(dir, 'hermes-sessions.jsonl');
+  const outputPath = join(dir, 'hermes.normalized.md');
+  writeFileSync(inputPath, JSON.stringify({
+    session_id: '20260603_121908_8c2361',
+    InsertTime: '2026-06-13T16:36:00.000Z',
+    messages: [
+      {
+        role: 'user',
+        content: 'エルビ 库存 PRECIOUS FRUITS numeric timestamp.',
+        timestamp: 1780489158.33065,
+      },
+    ],
+  }) + '\n');
+
+  const result = await runCli([
+    'bun',
+    normalizeBin,
+    '--input',
+    inputPath,
+    '--output',
+    outputPath,
+    '--family',
+    'jsonl',
+    '--title',
+    'Hermes JSONL Export',
+    '--json',
+  ]);
+
+  expect(result.stderr).toBe('');
+  expect(result.exitCode).toBe(0);
+  const output = readFileSync(outputPath, 'utf8');
+  expect(output).toContain('- [2026-06-03T12:19:18.330Z] user: エルビ 库存 PRECIOUS FRUITS numeric timestamp.');
+  expect(output).not.toContain('[2026-06-13T16:36:00.000Z]');
+  expect(output).not.toContain('[1970-01-21');
+});
+
 test('README documents normalize transcript usage and source-ref output', async () => {
   const readme = await Bun.file(join(coreRoot, 'README.md')).text();
 

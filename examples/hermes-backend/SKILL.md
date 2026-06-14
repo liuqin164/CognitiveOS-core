@@ -96,7 +96,7 @@ cogmem import-hermes --workspace . --project hermes --state-db ./state.db --dry-
 cogmem import-hermes --workspace . --project hermes --state-db ./state.db
 ```
 
-The SQLite importer reads the `messages` table, preserves row/message order, and prefers message-level `occurredAt`, `timestamp`, or `createdAt`. `InsertTime` is only a fallback and must not be treated as the original conversation time.
+The SQLite importer reads the `messages` table, preserves row/message order, supports WAL-mode read-only databases through SQLite immutable mode, and prefers message-level `occurredAt`, `timestamp`, or `createdAt`. Numeric `timestamp` values below millisecond range are epoch seconds. `InsertTime` is only a fallback and must not be treated as the original conversation time.
 
 Then migrate:
 
@@ -135,6 +135,35 @@ cogmem memory dream --project hermes --watch --interval-ms 300000 --promote
 ```
 
 This command is the preferred long-running worker. Cron can still be used, but it is not required.
+
+## Active Memory Search
+
+When the prompt does not contain enough injected Cogmem context, do not search legacy memory files first. Ask Cogmem directly:
+
+```bash
+cogmem memory recall --query "<user question>" --project hermes --agent hermes --json
+```
+
+For inventory or product-memory questions, raw recall works even before vectors are built:
+
+```bash
+cogmem memory recall --query "我们记录过哪些库存" --project hermes --agent hermes --json
+cogmem memory search --query "エルビ 库存" --project hermes --json
+```
+
+If recall returns an item with `sourceContext.locator.command`, use that command to drill into the exact ledger event:
+
+```bash
+cogmem memory show --event <event-id> --before 2 --after 2 --json
+```
+
+`vectors: 0` does not mean memory is unavailable. It means dense vector search has no hot index yet; `memory recall` still has governed raw-ledger fallback. Broad inventory questions are expanded into structured cues such as `库存管理`, `在库`, `产品コード`, and `数量`; when compiled candidates miss those cues, prefer the raw ledger result and use its `sourceContext` for details. Check status with:
+
+```bash
+cogmem memory status --project hermes --json
+```
+
+Use top-level counters `rawEvents`, `vectors`, `dreamedRawCount`, `undreamedRawCount`, and `dreamCoverageRate` for machine decisions.
 
 ## Runtime Wiring
 

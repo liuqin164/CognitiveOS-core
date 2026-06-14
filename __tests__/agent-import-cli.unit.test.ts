@@ -453,6 +453,62 @@ test('Hermes import scans state.db messages and preserves original message times
   expect(searched.some((event) => String((event.payload as { text?: string }).text).includes('PRECIOUS FRUITS'))).toBe(true);
 });
 
+test('Hermes import reads WAL-mode state.db and numeric timestamp seconds', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-hermes-state-db-wal-'));
+  const dbPath = join(dir, 'memory.db');
+  const stateDbPath = join(dir, 'state.db');
+  const stateDb = new Database(stateDbPath);
+  stateDb.exec('PRAGMA journal_mode=WAL');
+  stateDb.exec(`
+    CREATE TABLE messages (
+      id INTEGER PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT,
+      timestamp REAL NOT NULL,
+      InsertTime TEXT,
+      active INTEGER NOT NULL DEFAULT 1
+    );
+  `);
+  stateDb.prepare(`
+    INSERT INTO messages (session_id, role, content, timestamp, InsertTime)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    '20260603_121908_8c2361',
+    'user',
+    'エルビ 库存 PRECIOUS FRUITS numeric state timestamp.',
+    1780489158.33065,
+    '2026-06-13T16:36:00.000Z',
+  );
+  stateDb.close();
+
+  const result = await runCli([
+    'bun',
+    hermesImportBin,
+    '--workspace',
+    dir,
+    '--db',
+    dbPath,
+    '--project',
+    'hermes-state-wal-test',
+    '--json',
+  ]);
+
+  expect(result.stderr).toBe('');
+  expect(result.exitCode).toBe(0);
+  const parsed = JSON.parse(result.stdout);
+  expect(parsed.sourceResults[0].adapterKind).toBe('hermes_state_db');
+  expect(parsed.recordsParsed).toBe(1);
+  expect(parsed.recordsIngested).toBe(1);
+
+  const kernel = createMemoryKernel({ dbPath });
+  const events = kernel.getThreadEvents('20260603_121908_8c2361', { projectId: 'hermes-state-wal-test' });
+  kernel.close();
+  expect(events).toHaveLength(1);
+  expect(events[0].occurredAt).toBe(1780489158.33065 * 1000);
+  expect(String((events[0].payload as { text?: string }).text)).toContain('PRECIOUS FRUITS');
+});
+
 test('Hermes import accepts an explicit --state-db path outside the workspace', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-hermes-state-db-explicit-'));
   const workspace = join(dir, 'workspace');

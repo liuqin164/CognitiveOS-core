@@ -42,3 +42,16 @@ test('agent recall query compiler expands semantic cue phrases across wording dr
   expect(compiled.searchTexts).toContain('黑盒');
   expect(compiled.temporalHints).toContain('past');
 });
+
+test('agent recall query compiler expands inventory questions into structured ledger cues', () => {
+  const compiled = compileAgentRecallQuery({
+    query: '我们记录过哪些库存',
+  });
+
+  expect(compiled.intent).toBe('memory_recall');
+  expect(compiled.primarySearchText).toBe('库存');
+  expect(compiled.keywords).toContain('库存');
+  expect(compiled.semanticCuePhrases).toContain('库存管理');
+  expect(compiled.semanticCuePhrases).toContain('产品コード');
+  expect(compiled.searchTexts).toContain('库存管理');
+});

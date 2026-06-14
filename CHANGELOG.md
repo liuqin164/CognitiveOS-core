@@ -49,3 +49,7 @@
 - Fixed agent-facing raw fallback recall to retry host-neutral keyword cues and avoid returning duplicate user/assistant events from the same turn.
 - Fixed the one-line installer so `curl | bash` starts `cogmem init` from `/dev/tty` instead of consuming an exhausted pipe.
 - Fixed `cogmem update` so `latest` dynamically resolves the GitHub latest release payload instead of fabricating a nonexistent `releases/latest/download/cogmem.tgz` package URL.
+- Fixed Hermes active recall when `vectors=0` by letting agent-facing recall fall back to source-anchored raw ledger evidence for imported Hermes records instead of filtering them out by source id.
+- Fixed agent-facing recall quality when universe navigation returns non-matching compiled candidates by preferring raw ledger cue matches; inventory queries now expand into structured cues such as `库存管理`, `在库`, `产品コード`, and `数量`.
+- Fixed `cogmem memory status --json` to expose stable top-level `rawEvents`, `vectors`, `dreamedRawCount`, `undreamedRawCount`, and `dreamCoverageRate` fields.
+- Fixed Hermes `state.db` and JSONL transcript timestamp handling for numeric epoch-second message timestamps, and added WAL-mode SQLite immutable read fallback for `state.db`.
