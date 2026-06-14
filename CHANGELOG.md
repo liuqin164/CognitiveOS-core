@@ -43,3 +43,8 @@
 - Added `cogmem memory govern`, `cogmem memory dream --promote`, and `cogmem memory dream --watch` so hosts can run a supervised curation/governance loop without cron-only polling or unbounded candidate backlog.
 - Added CPU promotion handling for source-anchored summaries/preferences and semantic organization candidates while keeping uncertain claims in `needs_confirmation` and never upgrading them to verified facts automatically.
 - Deduplicated Dream Curator provider warnings and supersede stale provider diagnostics after a later successful structured memory-model run.
+- Added Hermes `state.db` import support for SQLite `messages` history, including explicit `--state-db`, automatic workspace-root discovery, source-anchored raw ledger records, and message timestamp precedence over `InsertTime`.
+- Added Hermes JSONL session-export normalization for one-session-per-line objects with `messages[]`.
+- Fixed semantic relation candidates so promoted records keep a readable `content.summary` instead of empty organization metadata.
+- Fixed agent-facing raw fallback recall to retry host-neutral keyword cues and avoid returning duplicate user/assistant events from the same turn.
+- Fixed the one-line installer so `curl | bash` starts `cogmem init` from `/dev/tty` instead of consuming an exhausted pipe.

@@ -56,6 +56,7 @@ Use the matching dimension for larger local models: `qwen3-embedding:4b` uses `2
 
 Default Hermes memory contract:
 
+- `state.db` may contain the real chronological conversation history in SQLite `messages`.
 - `profile.md` contains durable profile/persona memory.
 - `sessions/**/*.md` contains conversation/session memory.
 
@@ -64,6 +65,15 @@ Preview first:
 ```bash
 cogmem import-hermes --workspace . --project hermes --dry-run
 ```
+
+If `state.db` exists, default import scans it automatically. If the database is elsewhere:
+
+```bash
+cogmem import-hermes --workspace . --project hermes --state-db ./state.db --dry-run
+cogmem import-hermes --workspace . --project hermes --state-db ./state.db
+```
+
+The SQLite importer prefers message-level `occurredAt`, `timestamp`, or `createdAt`; `InsertTime` is only a fallback. Do not use `InsertTime` as proof of the original conversation date when better message timestamps exist.
 
 Then migrate:
 
@@ -83,6 +93,20 @@ If Hermes stores memory somewhere else, pass explicit paths:
 cogmem import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
 cogmem import-hermes --workspace . --project hermes --session ./one.md
 cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
+```
+
+For Hermes JSONL session exports where each line has a `messages[]` array:
+
+```bash
+cogmem normalize-transcript --input ./hermes-sessions.jsonl --output ./hermes.normalized.md --family jsonl --dry-run --json
+cogmem normalize-transcript --input ./hermes-sessions.jsonl --output ./hermes.normalized.md --family jsonl
+cogmem import-hermes --workspace . --project hermes --session ./hermes.normalized.md
+```
+
+After import, run curation and CPU governance as a supervised worker:
+
+```bash
+cogmem memory dream --project hermes --watch --interval-ms 300000 --promote
 ```
 
 ## Runtime Wiring

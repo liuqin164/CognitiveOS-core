@@ -170,6 +170,8 @@ export declare class KernelAgentMemoryBackend {
     private recallForensicQuote;
     private recallForensicAnchor;
     private searchRawEventsByQueryPlan;
+    private dedupeRawEventsByTurnPreferUser;
+    private expandRawSearchTexts;
     private findPreviousSessionId;
     private getSessionEvents;
     private filterAgentEvidence;

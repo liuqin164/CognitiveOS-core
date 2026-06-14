@@ -282,6 +282,7 @@ test('dream governance promotes semantic organization candidates instead of lett
   const governed = kernel.promoteDreamCandidates({ projectId: 'demo', limit: 50 });
   const promoted = kernel.listDreamCandidates({ projectId: 'demo', statuses: ['promoted'], limit: 50 });
   const promotedTypes = promoted.map((candidate) => candidate.candidateType);
+  const promotedSemanticRelation = promoted.find((candidate) => candidate.candidateType === 'semantic_relation');
 
   expect(governed.decisions.length).toBeGreaterThan(0);
   expect(promotedTypes).toContain('summary');
@@ -289,6 +290,11 @@ test('dream governance promotes semantic organization candidates instead of lett
   expect(promotedTypes).toContain('semantic_tags');
   expect(promotedTypes).toContain('indexing_decision');
   expect(promotedTypes).toContain('semantic_relation');
+  expect(promotedSemanticRelation?.content).toMatchObject({
+    summary: expect.stringContaining('记忆黑盒'),
+    sourceEventId: expect.stringMatching(/^evt-/),
+    targetEventId: expect.stringMatching(/^evt-/),
+  });
   expect(kernel.countDreamCandidates({ projectId: 'demo', statuses: ['candidate'] })).toBe(0);
   expect(kernel.vectorStore.getCurrentCount()).toBe(0);
 

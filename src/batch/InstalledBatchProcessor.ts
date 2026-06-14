@@ -2,6 +2,7 @@
 import type { IngestInput, Neuron } from '../types/index.js';
 import {
   ConversationMarkdownAdapter,
+  HermesStateDbAdapter,
   MarkdownSourceLoader,
   OpenClawDailyMemoryAdapter,
   OpenClawMemoryIndexAdapter,
@@ -109,6 +110,7 @@ export class InstalledBatchProcessor {
   private readonly loader = new MarkdownSourceLoader();
   private readonly adapters = new Map<string, SourceAdapter>([
     ['conversation_markdown', new ConversationMarkdownAdapter()],
+    ['hermes_state_db', new HermesStateDbAdapter()],
     ['soul_markdown', new SoulMarkdownAdapter()],
     ['openclaw_daily_memory', new OpenClawDailyMemoryAdapter()],
     ['openclaw_session', new OpenClawSessionAdapter()],

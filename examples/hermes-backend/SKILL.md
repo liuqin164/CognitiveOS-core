@@ -79,6 +79,7 @@ timeout_ms = 60000
 
 Default Hermes memory contract:
 
+- `state.db` may contain the real chronological conversation history in SQLite `messages`.
 - `profile.md` contains durable profile/persona memory.
 - `sessions/**/*.md` contains conversation/session memory.
 
@@ -87,6 +88,15 @@ Always preview first:
 ```bash
 cogmem import-hermes --workspace . --project hermes --dry-run
 ```
+
+If `state.db` exists, the default import scans it automatically. Use an explicit path when the database is outside the workspace:
+
+```bash
+cogmem import-hermes --workspace . --project hermes --state-db ./state.db --dry-run
+cogmem import-hermes --workspace . --project hermes --state-db ./state.db
+```
+
+The SQLite importer reads the `messages` table, preserves row/message order, and prefers message-level `occurredAt`, `timestamp`, or `createdAt`. `InsertTime` is only a fallback and must not be treated as the original conversation time.
 
 Then migrate:
 
@@ -108,7 +118,23 @@ cogmem import-hermes --workspace . --project hermes --session ./one.md
 cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
 ```
 
+For Hermes JSONL session exports where each line is a session object with `messages[]`, normalize first:
+
+```bash
+cogmem normalize-transcript --input ./hermes-sessions.jsonl --output ./hermes.normalized.md --family jsonl --dry-run --json
+cogmem normalize-transcript --input ./hermes-sessions.jsonl --output ./hermes.normalized.md --family jsonl
+cogmem import-hermes --workspace . --project hermes --session ./hermes.normalized.md
+```
+
 The importer is idempotent. Re-running it skips records already imported into the same memory database.
+
+Run the curator/governance loop under host supervision after import and during normal use:
+
+```bash
+cogmem memory dream --project hermes --watch --interval-ms 300000 --promote
+```
+
+This command is the preferred long-running worker. Cron can still be used, but it is not required.
 
 ## Runtime Wiring
 

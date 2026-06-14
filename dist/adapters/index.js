@@ -8,4 +8,5 @@ export { OpenClawMemoryIndexAdapter } from './openclaw/OpenClawMemoryIndexAdapte
 export { OpenClawUserProfileAdapter } from './openclaw/OpenClawUserProfileAdapter.js';
 export { OpenClawPersonaAdapter } from './openclaw/OpenClawPersonaAdapter.js';
 export { OpenClawWorkspaceProfile } from './openclaw/OpenClawWorkspaceProfile.js';
+export { HermesStateDbAdapter } from './hermes/HermesStateDbAdapter.js';
 export { HermesWorkspaceProfile } from './hermes/HermesWorkspaceProfile.js';

@@ -380,6 +380,117 @@ test('Hermes import migrates profile and session markdown into core memory', asy
   expect(recalled.rawEvidence.some((item) => item.content.includes('GATT configuration service'))).toBe(true);
 });
 
+test('Hermes import scans state.db messages and preserves original message timestamps', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-hermes-state-db-'));
+  const dbPath = join(dir, 'memory.db');
+  const stateDbPath = join(dir, 'state.db');
+  const stateDb = new Database(stateDbPath);
+  stateDb.exec(`
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      role TEXT,
+      content TEXT,
+      occurredAt TEXT,
+      InsertTime TEXT
+    );
+  `);
+  stateDb.prepare(`
+    INSERT INTO messages (id, session_id, role, content, occurredAt, InsertTime)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'm1',
+    'hermes-session-sqlite',
+    'user',
+    '6月9日のエルビ库存 PRECIOUS FRUITS を確認した。',
+    '2026-06-09T01:02:03.000Z',
+    '2026-06-13T16:36:00.000Z',
+  );
+  stateDb.prepare(`
+    INSERT INTO messages (id, session_id, role, content, occurredAt, InsertTime)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'm2',
+    'hermes-session-sqlite',
+    'assistant',
+    'Hermes state.db import must not collapse history to InsertTime.',
+    '2026-06-15T04:05:06.000Z',
+    '2026-06-13T16:36:00.000Z',
+  );
+  stateDb.close();
+
+  const result = await runCli([
+    'bun',
+    hermesImportBin,
+    '--workspace',
+    dir,
+    '--db',
+    dbPath,
+    '--project',
+    'hermes-state-test',
+    '--json',
+  ]);
+
+  expect(result.stderr).toBe('');
+  expect(result.exitCode).toBe(0);
+  const parsed = JSON.parse(result.stdout);
+  expect(parsed.agent).toBe('hermes');
+  expect(parsed.sourcesScanned).toBe(1);
+  expect(parsed.sourceResults[0].adapterKind).toBe('hermes_state_db');
+  expect(parsed.recordsIngested).toBe(2);
+
+  const kernel = createMemoryKernel({ dbPath });
+  const events = kernel.getThreadEvents('hermes-session-sqlite', { projectId: 'hermes-state-test' });
+  const searched = kernel.searchRawEvents('エルビ 库存 PRECIOUS FRUITS', {
+    projectId: 'hermes-state-test',
+    limit: 5,
+  });
+  kernel.close();
+
+  expect(events).toHaveLength(2);
+  expect(events[0].occurredAt).toBe(Date.parse('2026-06-09T01:02:03.000Z'));
+  expect(events[1].occurredAt).toBe(Date.parse('2026-06-15T04:05:06.000Z'));
+  expect(searched.some((event) => String((event.payload as { text?: string }).text).includes('PRECIOUS FRUITS'))).toBe(true);
+});
+
+test('Hermes import accepts an explicit --state-db path outside the workspace', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-hermes-state-db-explicit-'));
+  const workspace = join(dir, 'workspace');
+  const dbPath = join(dir, 'memory.db');
+  const stateDbPath = join(dir, 'hermes-state.db');
+  mkdirSync(workspace);
+  const stateDb = new Database(stateDbPath);
+  stateDb.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY, sessionId TEXT, role TEXT, text TEXT, timestamp TEXT)');
+  stateDb.prepare('INSERT INTO messages (sessionId, role, text, timestamp) VALUES (?, ?, ?, ?)').run(
+    'explicit-session',
+    'user',
+    'Hermes explicit state database remembered MCP wiring.',
+    '2026-06-10T10:00:00.000Z',
+  );
+  stateDb.close();
+
+  const result = await runCli([
+    'bun',
+    hermesImportBin,
+    '--workspace',
+    workspace,
+    '--state-db',
+    stateDbPath,
+    '--db',
+    dbPath,
+    '--project',
+    'hermes-state-explicit-test',
+    '--json',
+  ]);
+
+  expect(result.stderr).toBe('');
+  expect(result.exitCode).toBe(0);
+  const parsed = JSON.parse(result.stdout);
+  expect(parsed.sourcesScanned).toBe(1);
+  expect(parsed.recordsIngested).toBe(1);
+  expect(parsed.sourceResults[0].sourcePath).toBe(stateDbPath);
+});
+
 test('Hermes import accepts repeated explicit session files for single or batch migration', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-hermes-explicit-sessions-'));
   const dbPath = join(dir, 'memory.db');
@@ -591,6 +702,8 @@ test('README documents complete import usage including single files, batches, an
   expect(readme).toContain('--session ./one.md --session ./two.md');
   expect(readme).toContain('--memory ./one.md --memory ./two.md');
   expect(readme).toContain('cogmem import-hermes');
+  expect(readme).toContain('--state-db ./state.db');
+  expect(readme).toContain('--family jsonl');
   expect(readme).toContain('--profile ./memory/profile.md --sessions ./memory/sessions');
   expect(readme).toContain('--session ./one.md --session ./two.md');
   expect(readme).toContain('dry-run');
@@ -635,6 +748,9 @@ test('agent-facing skill files tell OpenClaw and Hermes agents how to self-insta
   expect(hermes).toContain('cogmem import-hermes');
   expect(hermes).toContain('~/.hermes/config.yaml');
   expect(hermes).toContain('memory.provider');
+  expect(hermes).toContain('--state-db ./state.db');
+  expect(hermes).toContain('--family jsonl');
+  expect(hermes).toContain('cogmem memory dream --project hermes --watch --interval-ms 300000 --promote');
   expect(hermes).toContain('--session ./one.md --session ./two.md');
 });
 

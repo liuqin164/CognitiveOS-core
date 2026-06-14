@@ -1,5 +1,5 @@
 import type { IngestInput, SourceType } from '../types/index.js';
-export type SourceAdapterKind = 'conversation_markdown' | 'soul_markdown' | 'openclaw_daily_memory' | 'openclaw_session' | 'openclaw_memory_index' | 'openclaw_user_profile' | 'openclaw_persona';
+export type SourceAdapterKind = 'conversation_markdown' | 'soul_markdown' | 'hermes_state_db' | 'openclaw_daily_memory' | 'openclaw_session' | 'openclaw_memory_index' | 'openclaw_user_profile' | 'openclaw_persona';
 export type SourceRecordKind = 'conversation_message' | 'conversation_turn' | 'raw_utterance' | 'self_summary' | 'reflection' | 'note';
 export type SourceReliabilityClass = 'raw_utterance' | 'self_summary' | 'reflection' | 'imported_summary' | 'imported_profile';
 export type SourceActorRole = 'user' | 'agent' | 'system' | 'narrator';

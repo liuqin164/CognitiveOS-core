@@ -22,7 +22,7 @@ export interface BrainRecallResult {
         sourcePath: string;
         text: string;
         timestamp: number;
-        sourceType: 'conversation_markdown' | 'soul_markdown' | 'openclaw_daily_memory' | 'openclaw_session' | 'openclaw_memory_index' | 'openclaw_user_profile' | 'openclaw_persona';
+        sourceType: 'conversation_markdown' | 'soul_markdown' | 'hermes_state_db' | 'openclaw_daily_memory' | 'openclaw_session' | 'openclaw_memory_index' | 'openclaw_user_profile' | 'openclaw_persona';
     }>;
     profileSignals: Array<{
         neuronId: string;

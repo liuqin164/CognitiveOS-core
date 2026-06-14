@@ -4,6 +4,7 @@ export interface HermesWorkspaceSourceOptions {
     sessionDir?: string;
     sessionPaths?: string[];
     profilePath?: string;
+    stateDbPath?: string;
 }
 export declare class HermesWorkspaceProfile {
     readonly workspaceRoot: string;

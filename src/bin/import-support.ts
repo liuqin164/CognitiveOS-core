@@ -5,6 +5,7 @@ import {
   buildEpisodeEnvelope,
   ConversationMarkdownAdapter,
   HermesWorkspaceProfile,
+  HermesStateDbAdapter,
   MarkdownSourceLoader,
   OpenClawDailyMemoryAdapter,
   OpenClawMemoryIndexAdapter,
@@ -122,6 +123,7 @@ export async function runHermesImport(argv: string[]): Promise<void> {
     profilePath: stringArg(args, 'profile'),
     sessionDir: stringArg(args, 'sessions'),
     sessionPaths: listArgs(args, 'session').map((item) => resolve(workspaceRoot, item)),
+    stateDbPath: stringArg(args, 'state-db') ? resolve(workspaceRoot, stringArg(args, 'state-db') as string) : undefined,
   });
 
   await runAgentImport({
@@ -130,7 +132,7 @@ export async function runHermesImport(argv: string[]): Promise<void> {
     workspaceRoot,
     projectId,
     sources,
-    usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--profile <file>] [--sessions <dir>] [--session <file>...] [--reindex-raw] [--dry-run] [--json] [--progress] [--no-progress]',
+    usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--state-db <state.db>] [--profile <file>] [--sessions <dir>] [--session <file>...] [--reindex-raw] [--dry-run] [--json] [--progress] [--no-progress]',
   });
 }
 
@@ -503,6 +505,7 @@ function openKernel(args: ParsedArgs, workspaceRoot: string): { kernel: MemoryKe
 function buildAdapterMap(): Map<SourceAdapterKind, SourceAdapter> {
   return new Map<SourceAdapterKind, SourceAdapter>([
     ['conversation_markdown', new ConversationMarkdownAdapter()],
+    ['hermes_state_db', new HermesStateDbAdapter()],
     ['soul_markdown', new SoulMarkdownAdapter()],
     ['openclaw_daily_memory', new OpenClawDailyMemoryAdapter()],
     ['openclaw_session', new OpenClawSessionAdapter()],

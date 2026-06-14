@@ -26,6 +26,7 @@ export interface BrainRecallResult {
     sourceType:
       | 'conversation_markdown'
       | 'soul_markdown'
+      | 'hermes_state_db'
       | 'openclaw_daily_memory'
       | 'openclaw_session'
       | 'openclaw_memory_index'

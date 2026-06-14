@@ -107,6 +107,61 @@ test('cogmem-normalize-transcript dry-run reports CSV row anchors without writin
   ]);
 });
 
+test('cogmem-normalize-transcript expands Hermes JSONL session objects and preserves message timestamps', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-normalize-hermes-jsonl-'));
+  const inputPath = join(dir, 'hermes-sessions.jsonl');
+  const outputPath = join(dir, 'hermes.normalized.md');
+  writeFileSync(inputPath, JSON.stringify({
+    sessionId: 'hermes-session-1',
+    InsertTime: '2026-06-13T16:36:00.000Z',
+    messages: [
+      {
+        role: 'user',
+        text: '6月9日のエルビ库存 PRECIOUS FRUITS を確認した。',
+        occurredAt: '2026-06-09T01:02:03.000Z',
+      },
+      {
+        role: 'assistant',
+        content: 'Hermes session export should keep original message time.',
+        timestamp: '2026-06-15T04:05:06.000Z',
+      },
+    ],
+  }) + '\n');
+
+  const result = await runCli([
+    'bun',
+    normalizeBin,
+    '--input',
+    inputPath,
+    '--output',
+    outputPath,
+    '--family',
+    'jsonl',
+    '--title',
+    'Hermes JSONL Export',
+    '--json',
+  ]);
+
+  expect(result.stderr).toBe('');
+  expect(result.exitCode).toBe(0);
+  const summary = JSON.parse(result.stdout);
+  expect(summary).toMatchObject({
+    family: 'jsonl_transcript_export',
+    messageCount: 2,
+    sourceRefCount: 2,
+    written: true,
+  });
+  expect(summary.sourceRefs).toEqual([
+    { sourceOffset: 1, lineStart: 1, lineEnd: 1, orderingConfidence: 'high' },
+    { sourceOffset: 2, lineStart: 1, lineEnd: 1, orderingConfidence: 'high' },
+  ]);
+
+  const output = readFileSync(outputPath, 'utf8');
+  expect(output).toContain('- [2026-06-09T01:02:03.000Z] user: 6月9日のエルビ库存 PRECIOUS FRUITS を確認した。');
+  expect(output).toContain('- [2026-06-15T04:05:06.000Z] agent: Hermes session export should keep original message time.');
+  expect(output).not.toContain('[2026-06-13T16:36:00.000Z]');
+});
+
 test('README documents normalize transcript usage and source-ref output', async () => {
   const readme = await Bun.file(join(coreRoot, 'README.md')).text();
 

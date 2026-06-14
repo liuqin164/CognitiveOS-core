@@ -421,6 +421,10 @@ export class DreamCuratorWorker {
         : next.parentEventId === current.eventId
           ? next.causalityType || 'caused'
           : 'chronologically_followed_by';
+      const relationSummary = [
+        `${current.role || current.rawEventType || 'event'}: ${truncate(eventText(current), 140)}`,
+        `${next.role || next.rawEventType || 'event'}: ${truncate(eventText(next), 140)}`,
+      ].join('\n');
       candidates.push({
         candidateType: 'semantic_relation',
         status,
@@ -428,6 +432,7 @@ export class DreamCuratorWorker {
         content: {
           projectId: current.projectId || next.projectId,
           relation,
+          summary: relationSummary,
           sourceEventId: current.eventId,
           targetEventId: next.eventId,
           topicPath: inferTopicPath(`${eventText(current)}\n${eventText(next)}`, extractTopics(`${eventText(current)}\n${eventText(next)}`)),

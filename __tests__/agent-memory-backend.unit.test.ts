@@ -64,6 +64,40 @@ test('agent backend recall falls back to bounded raw ledger search for raw-only 
   kernel.close();
 });
 
+test('agent backend raw fallback finds multilingual Hermes terms without hot vectors', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-backend-raw-fallback-multilingual-'));
+  const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+
+  await backend.rememberTurnWithResult({
+    agentId: 'hermes',
+    projectId: 'hermes',
+    sessionId: 'hermes-raw-fallback',
+    userText: '6月9日のエルビ库存 PRECIOUS FRUITS を確認した。',
+    assistantText: 'Hermes raw ledger should preserve this imported inventory clue.',
+    timestamp: Date.parse('2026-06-09T01:02:03.000Z'),
+    ingestMode: 'raw_archive_only',
+  });
+
+  const events = kernel.searchRawEvents('エルビ 库存 PRECIOUS FRUITS', {
+    projectId: 'hermes',
+    limit: 5,
+  });
+  const recalled = backend.recall({
+    agentId: 'hermes',
+    projectId: 'hermes',
+    query: 'Hermes 里关于 エルビ 库存 PRECIOUS FRUITS 的记忆',
+    limit: 5,
+  });
+
+  expect(kernel.vectorStore.getCurrentCount()).toBe(0);
+  expect(events.some((event) => String((event.payload as { text?: string }).text).includes('PRECIOUS FRUITS'))).toBe(true);
+  expect(recalled.recallMode).toBe('raw_ledger_fallback');
+  expect(recalled.items.some((item) => item.text.includes('PRECIOUS FRUITS'))).toBe(true);
+
+  kernel.close();
+});
+
 test('agent backend selective mode compiles durable instructions but skips low-signal chatter', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agent-backend-selective-'));
   const kernel = createMemoryKernel({ dbPath: join(dir, 'brain.db'), vectorBackend: 'sqlite-vec' });

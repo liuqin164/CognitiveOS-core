@@ -444,7 +444,9 @@ export class KernelAgentMemoryBackend {
       };
     }
 
-    const rawEvents = this.searchRawEventsByQueryPlan(queryPlan, query, Math.max(limit * 2, 10));
+    const rawEvents = this.dedupeRawEventsByTurnPreferUser(
+      this.searchRawEventsByQueryPlan(queryPlan, query, Math.max(limit * 2, 10))
+    );
     const rawItems = rawEvents
       .filter((event) => this.isAgentRawEvent(event, query.agentId))
       .filter((event) => this.isAllowedSession(event, query))
@@ -556,7 +558,8 @@ export class KernelAgentMemoryBackend {
   ): MemoryEvent[] {
     const seen = new Set<string>();
     const out: MemoryEvent[] = [];
-    for (const searchText of queryPlan.searchTexts) {
+    const searchTexts = this.expandRawSearchTexts(queryPlan);
+    for (const searchText of searchTexts) {
       const events = this.kernel.searchRawEvents(searchText, {
         projectId: query.projectId,
         workspaceId: query.workspaceId,
@@ -573,6 +576,35 @@ export class KernelAgentMemoryBackend {
       }
     }
     return out;
+  }
+
+  private dedupeRawEventsByTurnPreferUser(events: MemoryEvent[]): MemoryEvent[] {
+    const byTurn = new Map<string, MemoryEvent>();
+    for (const event of events) {
+      const key = event.turnId || event.eventId;
+      const existing = byTurn.get(key);
+      if (!existing) {
+        byTurn.set(key, event);
+        continue;
+      }
+      if (event.role === 'user' && existing.role !== 'user') {
+        byTurn.set(key, event);
+      }
+    }
+    return [...byTurn.values()].sort((a, b) => (
+      (a.globalSeq || 0) - (b.globalSeq || 0)
+      || this.quoteEventPriority(a) - this.quoteEventPriority(b)
+      || a.eventId.localeCompare(b.eventId)
+    ));
+  }
+
+  private expandRawSearchTexts(queryPlan: AgentRecallQueryPlan): string[] {
+    const hostNeutralKeywords = queryPlan.keywords.filter((keyword) => !/^(hermes|openclaw|cogmem)$/i.test(keyword));
+    return uniqueNonEmpty([
+      ...queryPlan.searchTexts,
+      hostNeutralKeywords.join(' '),
+      ...hostNeutralKeywords.filter((keyword) => keyword.length >= 2),
+    ]);
   }
 
   private findPreviousSessionId(query: AgentRecallQuery): string | undefined {
@@ -899,4 +931,18 @@ export class KernelAgentMemoryBackend {
     ];
     return durableSignals.some((signal) => signal.test(normalized));
   }
+}
+
+function uniqueNonEmpty(values: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
 }

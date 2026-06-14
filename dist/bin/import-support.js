@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { basename, resolve } from 'node:path';
-import { buildEpisodeEnvelope, ConversationMarkdownAdapter, HermesWorkspaceProfile, MarkdownSourceLoader, OpenClawDailyMemoryAdapter, OpenClawMemoryIndexAdapter, OpenClawPersonaAdapter, OpenClawSessionAdapter, OpenClawUserProfileAdapter, OpenClawWorkspaceProfile, SoulMarkdownAdapter, } from '../adapters/index.js';
+import { buildEpisodeEnvelope, ConversationMarkdownAdapter, HermesWorkspaceProfile, HermesStateDbAdapter, MarkdownSourceLoader, OpenClawDailyMemoryAdapter, OpenClawMemoryIndexAdapter, OpenClawPersonaAdapter, OpenClawSessionAdapter, OpenClawUserProfileAdapter, OpenClawWorkspaceProfile, SoulMarkdownAdapter, } from '../adapters/index.js';
 import { InstalledBatchProcessor } from '../batch/InstalledBatchProcessor.js';
 import { loadCogmemConfig, resolveCogmemConfigPath } from '../config/CogmemConfig.js';
 import { createMemoryKernel, createMemoryKernelFromConfig, } from '../factory.js';
@@ -57,6 +57,7 @@ export async function runHermesImport(argv) {
         profilePath: stringArg(args, 'profile'),
         sessionDir: stringArg(args, 'sessions'),
         sessionPaths: listArgs(args, 'session').map((item) => resolve(workspaceRoot, item)),
+        stateDbPath: stringArg(args, 'state-db') ? resolve(workspaceRoot, stringArg(args, 'state-db')) : undefined,
     });
     await runAgentImport({
         agent: 'hermes',
@@ -64,7 +65,7 @@ export async function runHermesImport(argv) {
         workspaceRoot,
         projectId,
         sources,
-        usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--profile <file>] [--sessions <dir>] [--session <file>...] [--reindex-raw] [--dry-run] [--json] [--progress] [--no-progress]',
+        usage: 'Usage: cogmem-import-hermes [--workspace <dir>] [--project <id>] [--db <memory.db>|--config <config.toml>] [--state-db <state.db>] [--profile <file>] [--sessions <dir>] [--session <file>...] [--reindex-raw] [--dry-run] [--json] [--progress] [--no-progress]',
     });
 }
 async function runAgentImport(input) {
@@ -386,6 +387,7 @@ function openKernel(args, workspaceRoot) {
 function buildAdapterMap() {
     return new Map([
         ['conversation_markdown', new ConversationMarkdownAdapter()],
+        ['hermes_state_db', new HermesStateDbAdapter()],
         ['soul_markdown', new SoulMarkdownAdapter()],
         ['openclaw_daily_memory', new OpenClawDailyMemoryAdapter()],
         ['openclaw_session', new OpenClawSessionAdapter()],

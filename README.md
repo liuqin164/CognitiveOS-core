@@ -21,7 +21,9 @@ The installer:
 1. Ensures Bun is available.
 2. Installs the latest `cogmem` release asset into `~/.cogmem/pkg`.
 3. Links the `cogmem` CLI into `~/.bun/bin`.
-4. Starts the interactive setup wizard.
+4. Starts the interactive setup wizard from `/dev/tty`, so `curl | bash` installs still receive real keyboard input.
+
+If no interactive terminal is available, the installer writes a conservative non-interactive config and tells you to rerun `cogmem init`.
 
 To skip the wizard:
 
@@ -207,10 +209,14 @@ Hermes:
 ```bash
 cogmem import-hermes --workspace . --project hermes --dry-run
 cogmem import-hermes --workspace . --project hermes
+cogmem import-hermes --workspace . --project hermes --state-db ./state.db --dry-run
+cogmem import-hermes --workspace . --project hermes --state-db ./state.db
 cogmem import-hermes --workspace . --project hermes --profile ./memory/profile.md --sessions ./memory/sessions
 cogmem import-hermes --workspace . --project hermes --session ./one.md
 cogmem import-hermes --workspace . --project hermes --session ./one.md --session ./two.md
 ```
+
+Hermes `state.db` is scanned automatically when it exists at the workspace root. The importer reads the SQLite `messages` table, preserves message order, and prefers message-level `occurredAt` / `timestamp` / `createdAt` fields; `InsertTime` is only a fallback when the original message time is absent.
 
 Imports are idempotent. Re-running the same import skips records already processed by the cursor store. Use `--json --progress` when a host agent needs machine-readable output while still receiving progress on stderr.
 
@@ -218,11 +224,12 @@ Normalize JSON, JSONL, CSV, or TSV transcripts before import when the source for
 
 ```bash
 cogmem normalize-transcript --input ./export.json --output ./normalized.md --family json-array --dry-run --json
+cogmem normalize-transcript --input ./hermes-sessions.jsonl --output ./normalized.md --family jsonl --dry-run --json
 cogmem normalize-transcript --input ./export.csv --output ./normalized.md --family csv --dry-run --json
 cogmem-normalize-transcript --input ./export.json --output ./normalized.md --family json-array --dry-run --json
 ```
 
-Normalization writes Markdown with `cogmem-source-ref` markers for raw offset, line, and ordering confidence. A dry run validates and summarizes the transcript only; it does not open a memory database.
+Normalization writes Markdown with `cogmem-source-ref` markers for raw offset, line, and ordering confidence. JSONL supports both one-message-per-line exports and Hermes session exports where each line is an object with `messages[]`. A dry run validates and summarizes the transcript only; it does not open a memory database.
 
 ## OpenClaw
 
@@ -301,6 +308,13 @@ Import existing Hermes memory:
 ```bash
 cogmem import-hermes --workspace /path/to/hermes/workspace --project hermes --dry-run
 cogmem import-hermes --workspace /path/to/hermes/workspace --project hermes
+```
+
+If Hermes stores conversations in SQLite:
+
+```bash
+cogmem import-hermes --workspace /path/to/hermes/workspace --project hermes --state-db /path/to/hermes/workspace/state.db --dry-run
+cogmem import-hermes --workspace /path/to/hermes/workspace --project hermes --state-db /path/to/hermes/workspace/state.db
 ```
 
 If Hermes stores memory in non-default paths, pass explicit files:

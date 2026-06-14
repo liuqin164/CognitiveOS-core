@@ -708,6 +708,55 @@ test('memory CLI runs dream curator and lists governance candidates', async () =
   expect(JSON.stringify(queue)).toContain('sourceAnchor');
 });
 
+test('memory CLI dream --max-runs 1 commits dreamed raw progress across processes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogmem-memory-dream-cli-progress-'));
+  const configPath = join(dir, '.cogmem', 'config.toml');
+  mkdirSync(join(dir, '.cogmem'), { recursive: true });
+  writeFileSync(configPath, '[core]\ndb_path = "memory.db"\nvector_backend = "sqlite-vec"\n');
+
+  const kernel = createMemoryKernel({ dbPath: join(dir, '.cogmem', 'memory.db'), vectorBackend: 'sqlite-vec' });
+  const backend = new KernelAgentMemoryBackend(kernel);
+  await backend.rememberTurnWithResult({
+    agentId: 'hermes',
+    projectId: 'hermes',
+    sessionId: 'hermes-dream-progress',
+    userText: 'Hermes dream progress must be committed after max-runs one.',
+    assistantText: 'The next dream run should skip these raw events.',
+    ingestMode: 'raw_then_dream',
+  });
+  kernel.close();
+
+  const firstProc = Bun.spawn({
+    cmd: ['bun', memoryBin, 'dream', '--config', configPath, '--project', 'hermes', '--max-runs', '1', '--json'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const firstOutput = await new Response(firstProc.stdout).text();
+  const firstError = await new Response(firstProc.stderr).text();
+  expect(await firstProc.exited).toBe(0);
+  expect(firstError).toBe('');
+  const first = JSON.parse(firstOutput);
+  expect(first.processedEventCount).toBe(2);
+  expect(first.status.undreamedRawCount).toBe(0);
+  expect(first.status.lastDreamedGlobalSeq).toBeGreaterThan(0);
+
+  const secondProc = Bun.spawn({
+    cmd: ['bun', memoryBin, 'dream', '--config', configPath, '--project', 'hermes', '--max-runs', '1', '--json'],
+    cwd: coreRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const secondOutput = await new Response(secondProc.stdout).text();
+  const secondError = await new Response(secondProc.stderr).text();
+  expect(await secondProc.exited).toBe(0);
+  expect(secondError).toBe('');
+  const second = JSON.parse(secondOutput);
+  expect(second.skipped).toBe(true);
+  expect(second.reason).toBe('no_undreamed_raw_events');
+  expect(second.processedEventCount).toBe(0);
+});
+
 test('memory CLI governs dream candidates and can run a one-iteration watch loop', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cogmem-memory-govern-cli-'));
   const configPath = join(dir, '.cogmem', 'config.toml');

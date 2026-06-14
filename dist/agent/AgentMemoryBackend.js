@@ -245,7 +245,7 @@ export class KernelAgentMemoryBackend {
                 queryPlan,
             };
         }
-        const rawEvents = this.searchRawEventsByQueryPlan(queryPlan, query, Math.max(limit * 2, 10));
+        const rawEvents = this.dedupeRawEventsByTurnPreferUser(this.searchRawEventsByQueryPlan(queryPlan, query, Math.max(limit * 2, 10)));
         const rawItems = rawEvents
             .filter((event) => this.isAgentRawEvent(event, query.agentId))
             .filter((event) => this.isAllowedSession(event, query))
@@ -349,7 +349,8 @@ export class KernelAgentMemoryBackend {
     searchRawEventsByQueryPlan(queryPlan, query, limit) {
         const seen = new Set();
         const out = [];
-        for (const searchText of queryPlan.searchTexts) {
+        const searchTexts = this.expandRawSearchTexts(queryPlan);
+        for (const searchText of searchTexts) {
             const events = this.kernel.searchRawEvents(searchText, {
                 projectId: query.projectId,
                 workspaceId: query.workspaceId,
@@ -368,6 +369,31 @@ export class KernelAgentMemoryBackend {
             }
         }
         return out;
+    }
+    dedupeRawEventsByTurnPreferUser(events) {
+        const byTurn = new Map();
+        for (const event of events) {
+            const key = event.turnId || event.eventId;
+            const existing = byTurn.get(key);
+            if (!existing) {
+                byTurn.set(key, event);
+                continue;
+            }
+            if (event.role === 'user' && existing.role !== 'user') {
+                byTurn.set(key, event);
+            }
+        }
+        return [...byTurn.values()].sort((a, b) => ((a.globalSeq || 0) - (b.globalSeq || 0)
+            || this.quoteEventPriority(a) - this.quoteEventPriority(b)
+            || a.eventId.localeCompare(b.eventId)));
+    }
+    expandRawSearchTexts(queryPlan) {
+        const hostNeutralKeywords = queryPlan.keywords.filter((keyword) => !/^(hermes|openclaw|cogmem)$/i.test(keyword));
+        return uniqueNonEmpty([
+            ...queryPlan.searchTexts,
+            hostNeutralKeywords.join(' '),
+            ...hostNeutralKeywords.filter((keyword) => keyword.length >= 2),
+        ]);
     }
     findPreviousSessionId(query) {
         const page = this.kernel.eventStore.queryEvents(1, 1000, {
@@ -677,4 +703,19 @@ export class KernelAgentMemoryBackend {
         ];
         return durableSignals.some((signal) => signal.test(normalized));
     }
+}
+function uniqueNonEmpty(values) {
+    const out = [];
+    const seen = new Set();
+    for (const value of values) {
+        const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+        if (!normalized)
+            continue;
+        const key = normalized.toLowerCase();
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        out.push(normalized);
+    }
+    return out;
 }

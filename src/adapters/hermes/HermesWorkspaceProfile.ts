@@ -8,6 +8,7 @@ export interface HermesWorkspaceSourceOptions {
   sessionDir?: string;
   sessionPaths?: string[];
   profilePath?: string;
+  stateDbPath?: string;
 }
 
 export class HermesWorkspaceProfile {
@@ -21,6 +22,22 @@ export class HermesWorkspaceProfile {
     const projectId = options.projectId ?? basename(this.workspaceRoot);
     const sources: SourceDefinition[] = [];
     const profilePath = resolve(this.workspaceRoot, options.profilePath ?? 'profile.md');
+    const stateDbPath = resolve(this.workspaceRoot, options.stateDbPath ?? 'state.db');
+
+    if (existsSync(stateDbPath) && statSync(stateDbPath).isFile()) {
+      sources.push({
+        sourceId: `hermes-state-db-${computeStableHash([projectId, this.relativePath(stateDbPath)]).slice(0, 12)}`,
+        adapterKind: 'hermes_state_db',
+        sourcePath: stateDbPath,
+        projectId,
+        tags: ['hermes', 'state_db'],
+        metadata: {
+          hermesWorkspaceRoot: this.workspaceRoot,
+          hermesRelativePath: this.relativePath(stateDbPath),
+          hermesSourceClass: 'state_db',
+        },
+      });
+    }
 
     if (existsSync(profilePath) && statSync(profilePath).isFile()) {
       sources.push({

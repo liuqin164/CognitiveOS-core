@@ -50,6 +50,7 @@ describe('core release metadata', () => {
     expect(installer).toContain('/releases/latest');
     expect(installer).toContain('bun add');
     expect(installer).toContain('"$BIN_DIR/cogmem" init');
+    expect(installer).toContain('/dev/tty');
     expect(installer).not.toContain('CognitiveOS-core');
     expect(installer).not.toContain('@CognitiveOS/core');
   });

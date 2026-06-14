@@ -40,7 +40,14 @@ latest_release_asset() {
   local api="https://api.github.com/repos/$REPO/releases/latest"
   local payload
   payload="$(curl -fsSL "$api" || true)"
-  
+
+  local asset
+  asset="$(printf '%s\n' "$payload" | sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*cogmem[^"]*\.tgz\)".*/\1/p' | head -n 1)"
+  if [ -n "$asset" ]; then
+    printf '%s\n' "$asset"
+    return
+  fi
+
   local tag
   tag="$(printf '%s\n' "$payload" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
 
@@ -96,7 +103,12 @@ main() {
 
   log "Starting interactive setup. Configure an embedding model and a memory-model LLM for Dream Curator."
   # shellcheck disable=SC2086
-  "$BIN_DIR/cogmem" init ${COGMEM_INIT_ARGS:-}
+  if [ -r /dev/tty ]; then
+    "$BIN_DIR/cogmem" init ${COGMEM_INIT_ARGS:-} < /dev/tty
+  else
+    log "No interactive terminal is available. Run cogmem init manually after this installer exits."
+    "$BIN_DIR/cogmem" init --yes ${COGMEM_INIT_ARGS:-}
+  fi
 }
 
 main "$@"

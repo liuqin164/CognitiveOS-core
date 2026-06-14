@@ -9,6 +9,7 @@ export { OpenClawUserProfileAdapter } from './openclaw/OpenClawUserProfileAdapte
 export { OpenClawPersonaAdapter } from './openclaw/OpenClawPersonaAdapter.js';
 export { OpenClawWorkspaceProfile } from './openclaw/OpenClawWorkspaceProfile.js';
 export type { OpenClawClassifiedPath, OpenClawWorkspaceSelection, OpenClawWorkspaceSelectionDiagnostic, OpenClawWorkspaceSourceOptions, } from './openclaw/OpenClawWorkspaceProfile.js';
+export { HermesStateDbAdapter } from './hermes/HermesStateDbAdapter.js';
 export { HermesWorkspaceProfile } from './hermes/HermesWorkspaceProfile.js';
 export type { HermesWorkspaceSourceOptions } from './hermes/HermesWorkspaceProfile.js';
 //# sourceMappingURL=index.d.ts.map

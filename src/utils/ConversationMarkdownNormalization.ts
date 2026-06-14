@@ -130,10 +130,17 @@ export function pickMessageText(item: LooseRecord): string {
 }
 
 export function pickTimestamp(item: LooseRecord, fallback: number): string {
-  const raw = coerceText(item.timestamp)
+  const raw = coerceText(item.occurredAt)
+    || coerceText(item.occurred_at)
+    || coerceText(item.timestamp)
     || coerceText(item.created_at)
     || coerceText(item.createdAt)
-    || coerceText(item.time);
+    || coerceText(item.sentAt)
+    || coerceText(item.sent_at)
+    || coerceText(item.time)
+    || coerceText(item.InsertTime)
+    || coerceText(item.insertTime)
+    || coerceText(item.insert_time);
   const date = raw ? new Date(raw) : new Date(fallback);
   const usable = Number.isNaN(date.getTime()) ? new Date(fallback) : date;
   return usable.toISOString();
@@ -175,8 +182,23 @@ export function normalizeJsonlRecords(inputPath: string): NormalizedMessage[] {
   let sourceOffset = 0;
   return input.split('\n').flatMap((line, lineIndex) => {
     if (!line.trim()) return [];
+    const parsed = asLooseRecord(JSON.parse(line) as LooseRecord);
+    const messages = Array.isArray(parsed.messages)
+      ? parsed.messages.map((item) => asLooseRecord(item))
+      : [];
+    if (messages.length > 0) {
+      return messages.flatMap((message, messageIndex) => {
+        sourceOffset += 1;
+        return normalizeLooseRecordWithParent(message, parsed, sourceOffset - 1, {
+          sourceOffset,
+          lineStart: lineIndex + 1,
+          lineEnd: lineIndex + 1,
+          orderingConfidence: 'high',
+        }, messageIndex);
+      });
+    }
     sourceOffset += 1;
-    return normalizeLooseRecord(JSON.parse(line) as LooseRecord, sourceOffset - 1, {
+    return normalizeLooseRecord(parsed, sourceOffset - 1, {
       sourceOffset,
       lineStart: lineIndex + 1,
       lineEnd: lineIndex + 1,
@@ -555,6 +577,26 @@ function normalizeLooseRecord(item: LooseRecord, index: number, source?: Normali
       sourceOffset: index + 1,
       orderingConfidence: 'high',
     },
+  }];
+}
+
+function normalizeLooseRecordWithParent(
+  item: LooseRecord,
+  parent: LooseRecord,
+  index: number,
+  source: NormalizedMessageSource,
+  messageIndex: number,
+): NormalizedMessage[] {
+  const text = pickMessageText(item);
+  if (!text) return [];
+  const parentTimestamp = pickTimestamp(parent, Date.now() + index * 1000 + messageIndex);
+  const parentFallback = Date.parse(parentTimestamp);
+  const timestamp = pickTimestamp(item, Number.isNaN(parentFallback) ? Date.now() + index * 1000 : parentFallback);
+  return [{
+    role: normalizeRole(coerceText(item.role) || coerceText(item.sender) || coerceText(item.author)),
+    text,
+    timestamp,
+    source,
   }];
 }
 

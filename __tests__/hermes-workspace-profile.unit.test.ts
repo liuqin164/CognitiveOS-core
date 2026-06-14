@@ -36,3 +36,16 @@ test('HermesWorkspaceProfile supports explicit profile and session directories',
   expect(sources.map((source) => source.sourcePath).some((path) => path.endsWith('identity.md'))).toBe(true);
   expect(sources.map((source) => source.sourcePath).some((path) => path.endsWith('session.md'))).toBe(true);
 });
+
+test('HermesWorkspaceProfile includes state.db when Hermes stores messages in SQLite', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hermes-profile-state-db-'));
+  writeFileSync(join(root, 'state.db'), 'sqlite placeholder');
+
+  const profile = new HermesWorkspaceProfile(root);
+  const sources = profile.buildSourceDefinitions({ projectId: 'hermes' });
+  const stateDb = sources.find((source) => source.sourcePath.endsWith('state.db'));
+
+  expect(stateDb).toBeDefined();
+  expect(stateDb?.adapterKind).toBe('hermes_state_db');
+  expect(stateDb?.metadata?.hermesSourceClass).toBe('state_db');
+});

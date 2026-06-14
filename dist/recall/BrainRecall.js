@@ -1,4 +1,4 @@
-import { ConversationMarkdownAdapter, MarkdownSourceLoader, OpenClawDailyMemoryAdapter, OpenClawMemoryIndexAdapter, OpenClawPersonaAdapter, OpenClawSessionAdapter, OpenClawUserProfileAdapter, SoulMarkdownAdapter } from '../adapters/index.js';
+import { ConversationMarkdownAdapter, HermesStateDbAdapter, MarkdownSourceLoader, OpenClawDailyMemoryAdapter, OpenClawMemoryIndexAdapter, OpenClawPersonaAdapter, OpenClawSessionAdapter, OpenClawUserProfileAdapter, SoulMarkdownAdapter } from '../adapters/index.js';
 import { LocalSemanticCompiler } from '../engine/LocalSemanticCompiler.js';
 import { normalizeLexiconText } from '../lexicon/coreMemoryLexicon.js';
 import { logger } from '../utils/Logger.js';
@@ -10,6 +10,7 @@ export class BrainRecall {
     loader = new MarkdownSourceLoader();
     adapters = new Map([
         ['conversation_markdown', new ConversationMarkdownAdapter()],
+        ['hermes_state_db', new HermesStateDbAdapter()],
         ['soul_markdown', new SoulMarkdownAdapter()],
         ['openclaw_daily_memory', new OpenClawDailyMemoryAdapter()],
         ['openclaw_session', new OpenClawSessionAdapter()],
